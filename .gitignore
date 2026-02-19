@@ -11,3 +11,7 @@ nmsmods
 *.test
 *.out
 go.work
+
+# Local manual E2E runner and generated report
+local_e2e_all.sh
+local_e2e_report.md
