@@ -1,8 +1,6 @@
-
 package mods
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,68 +9,52 @@ import (
 	"time"
 )
 
-func DownloadToFile(rawURL, destPath string) (int64, error) {
-	if rawURL == "" {
-		return 0, errors.New("url is empty")
+// DownloadURLToFile downloads a remote URL into a local file path.
+// It writes to dest + ".part" first, then renames atomically.
+func DownloadURLToFile(url, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
 	}
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return 0, err
-	}
-	// A reasonable UA can help some CDNs; keep it simple.
-	req.Header.Set("User-Agent", "nmsmods/0.1 (+personal)")
 
-	client := &http.Client{Timeout: 0}
-	resp, err := client.Do(req)
+	tmp := dest + ".part"
+
+	out, err := os.Create(tmp)
 	if err != nil {
-		return 0, err
+		return err
+	}
+	defer out.Close()
+
+	client := &http.Client{
+		Timeout: 0, // allow large downloads (no fixed timeout)
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("download failed: %s", resp.Status)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed: %s", resp.Status)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return 0, err
+	// Stream copy
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return err
 	}
-	tmp := destPath + ".part"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		f.Close()
-	}()
 
-	// Simple progress: print bytes every ~1s
-	var written int64
-	buf := make([]byte, 32*1024)
-	last := time.Now()
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			wn, werr := f.Write(buf[:n])
-			if werr != nil {
-				return written, werr
-			}
-			written += int64(wn)
-			if time.Since(last) > time.Second {
-				fmt.Printf("\rDownloaded %.2f MB", float64(written)/(1024*1024))
-				last = time.Now()
-			}
-		}
-		if rerr != nil {
-			if errors.Is(rerr, io.EOF) {
-				break
-			}
-			return written, rerr
-		}
+	if err := out.Sync(); err != nil {
+		return err
 	}
-	fmt.Printf("\rDownloaded %.2f MB\n", float64(written)/(1024*1024))
 
-	if err := f.Close(); err != nil {
-		return written, err
+	// Rename atomically
+	if err := os.Rename(tmp, dest); err != nil {
+		return err
 	}
-	return written, os.Rename(tmp, destPath)
+
+	// Update mod time to now
+	now := time.Now()
+	_ = os.Chtimes(dest, now, now)
+
+	return nil
 }
