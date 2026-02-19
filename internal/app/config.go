@@ -1,13 +1,18 @@
-
 package app
 
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
+type NexusConfig struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
 type Config struct {
-	GamePath string `json:"game_path"`
+	GamePath string      `json:"game_path"`
+	Nexus    NexusConfig `json:"nexus,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -33,5 +38,9 @@ func SaveConfig(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	// Config may contain secrets (Nexus API key), so 0600.
+	return os.WriteFile(path, b, 0o600)
 }

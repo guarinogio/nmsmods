@@ -7,25 +7,37 @@ import (
 	"time"
 )
 
-const CurrentStateVersion = 1
+const CurrentStateVersion = 2
 
+// NexusInfo stores all metadata needed for version tracking and updates.
 type NexusInfo struct {
-	GameID   int    `json:"game_id,omitempty"`
-	ModID    int    `json:"mod_id,omitempty"`
-	FileID   int    `json:"file_id,omitempty"`
+	GameDomain string `json:"game_domain,omitempty"` // e.g. "nomanssky"
+
+	ModID  int `json:"mod_id,omitempty"`
+	FileID int `json:"file_id,omitempty"`
+
+	ModName  string `json:"mod_name,omitempty"`
 	FileName string `json:"file_name,omitempty"`
-	Version  string `json:"version,omitempty"`
+
+	Version string `json:"version,omitempty"`
+
+	CategoryName string `json:"category_name,omitempty"`
+
+	UploadedTimestamp int64  `json:"uploaded_timestamp,omitempty"`
+	UploadedTime      string `json:"uploaded_time,omitempty"`
+	ModUpdatedTime    string `json:"mod_updated_time,omitempty"`
+
+	// Future support
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 type ModEntry struct {
-	// Existing fields (keep for backward compat)
 	URL          string `json:"url,omitempty"`
-	ZIP          string `json:"zip,omitempty"`     // relative to Root (e.g. downloads/foo.zip)
-	Folder       string `json:"folder,omitempty"`  // install folder name under GAMEDATA/MODS
+	ZIP          string `json:"zip,omitempty"`    // relative to Root (e.g. downloads/foo.zip)
+	Folder       string `json:"folder,omitempty"` // install folder name under GAMEDATA/MODS
 	Installed    bool   `json:"installed,omitempty"`
 	DownloadedAt string `json:"downloaded_at,omitempty"`
 
-	// New fields (v1)
 	Source        string     `json:"source,omitempty"` // "local" | "url" | "nexus"
 	DisplayName   string     `json:"display_name,omitempty"`
 	Nexus         *NexusInfo `json:"nexus,omitempty"`
@@ -36,18 +48,20 @@ type ModEntry struct {
 }
 
 type State struct {
-	StateVersion int                `json:"state_version,omitempty"`
+	StateVersion int                 `json:"state_version,omitempty"`
 	Mods         map[string]ModEntry `json:"mods,omitempty"`
 }
 
 func NowRFC3339() string { return time.Now().Format(time.RFC3339) }
 
 func LoadState(path string) (State, error) {
-	// Default empty state if file doesn't exist
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return State{StateVersion: CurrentStateVersion, Mods: map[string]ModEntry{}}, nil
+			return State{
+				StateVersion: CurrentStateVersion,
+				Mods:         map[string]ModEntry{},
+			}, nil
 		}
 		return State{}, err
 	}
@@ -57,21 +71,20 @@ func LoadState(path string) (State, error) {
 		return State{}, err
 	}
 
-	// Backward compat: if missing map
 	if st.Mods == nil {
 		st.Mods = map[string]ModEntry{}
 	}
 
-	// Migration: missing StateVersion implies v0
 	if st.StateVersion == 0 {
 		st = migrateV0toV1(st)
-		// Best-effort write-back so future loads are fast/stable
+	}
+
+	if st.StateVersion == 1 {
+		st = migrateV1toV2(st)
 		_ = SaveState(path, st)
 	}
 
-	// Future: if more versions, chain migrations here
 	if st.StateVersion < CurrentStateVersion {
-		// no-op for now (CurrentStateVersion=1)
 		st.StateVersion = CurrentStateVersion
 		_ = SaveState(path, st)
 	}
@@ -81,10 +94,9 @@ func LoadState(path string) (State, error) {
 
 func migrateV0toV1(st State) State {
 	st.StateVersion = 1
+
 	for id, me := range st.Mods {
-		// Infer Source if missing
 		if me.Source == "" {
-			// If URL starts with file:// or dir://
 			if len(me.URL) >= 7 && me.URL[:7] == "file://" {
 				me.Source = "local"
 			} else if len(me.URL) >= 6 && me.URL[:6] == "dir://" {
@@ -93,16 +105,34 @@ func migrateV0toV1(st State) State {
 				me.Source = "url"
 			}
 		}
-		// DisplayName default: id (stable)
+
 		if me.DisplayName == "" {
 			me.DisplayName = id
 		}
-		// Health default
+
 		if me.Health == "" && me.Installed {
 			me.Health = "ok"
 		}
+
 		st.Mods[id] = me
 	}
+
+	return st
+}
+
+// v2 migration: ensure NexusInfo has GameDomain when present
+func migrateV1toV2(st State) State {
+	st.StateVersion = 2
+
+	for id, me := range st.Mods {
+		if me.Nexus != nil {
+			if me.Nexus.GameDomain == "" {
+				me.Nexus.GameDomain = "nomanssky" // default for now
+			}
+		}
+		st.Mods[id] = me
+	}
+
 	return st
 }
 

@@ -23,10 +23,35 @@ func PathsFromRoot(root string) *Paths {
 	}
 }
 
-// DefaultPaths uses (in order):
+func pathsFromXDG(home string) *Paths {
+	// Config
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		configHome = filepath.Join(home, ".config")
+	}
+	configDir := filepath.Join(configHome, "nmsmods")
+
+	// State (best place for caches/staging/download metadata)
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		stateHome = filepath.Join(home, ".local", "state")
+	}
+	stateDir := filepath.Join(stateHome, "nmsmods")
+
+	return &Paths{
+		Root:      stateDir,
+		Downloads: filepath.Join(stateDir, "downloads"),
+		Staging:   filepath.Join(stateDir, "staging"),
+		Config:    filepath.Join(configDir, "config.json"),
+		State:     filepath.Join(stateDir, "state.json"),
+	}
+}
+
+// DefaultPathsWithOverride uses (in order):
 // 1) explicit root override passed by caller (if non-empty)
 // 2) env var NMSMODS_HOME
-// 3) ~/.nmsmods
+// 3) legacy ~/.nmsmods (if it already exists)
+// 4) XDG dirs (XDG_STATE_HOME/XDG_CONFIG_HOME) with sensible defaults
 func DefaultPathsWithOverride(rootOverride string) (*Paths, error) {
 	if rootOverride != "" {
 		return PathsFromRoot(rootOverride), nil
@@ -38,7 +63,13 @@ func DefaultPathsWithOverride(rootOverride string) (*Paths, error) {
 	if err != nil {
 		return nil, err
 	}
-	return PathsFromRoot(filepath.Join(home, ".nmsmods")), nil
+
+	legacy := filepath.Join(home, ".nmsmods")
+	if _, err := os.Stat(legacy); err == nil {
+		return PathsFromRoot(legacy), nil
+	}
+
+	return pathsFromXDG(home), nil
 }
 
 func DefaultPaths() (*Paths, error) {
@@ -53,6 +84,9 @@ func (p *Paths) Ensure() error {
 		return err
 	}
 	if err := os.MkdirAll(p.Staging, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p.Config), 0o755); err != nil {
 		return err
 	}
 	return nil

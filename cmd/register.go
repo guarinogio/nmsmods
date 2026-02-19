@@ -25,4 +25,7 @@ func registerCommands(root *cobra.Command) {
 
 	root.AddCommand(cleanCmd)
 	root.AddCommand(resetCmd)
+
+	// Phase 1: Nexus API group
+	root.AddCommand(nexusCmd)
 }

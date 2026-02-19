@@ -12,14 +12,29 @@ import (
 
 var downloadsJSON bool
 
+// downloadRow is the stable JSON shape for `nmsmods downloads --json`.
 type downloadRow struct {
-	Index       int    `json:"index"`
-	ID          string `json:"id"`
-	Installed   bool   `json:"installed"`
-	ZipPath     string `json:"zip_path"`
-	URL         string `json:"url,omitempty"`
-	Folder      string `json:"folder,omitempty"`
+	Index int    `json:"index"`
+	ID    string `json:"id"`
+
+	// Backward-compatible fields
+	Installed    bool   `json:"installed"`
+	ZipPath      string `json:"zip_path"`
+	URL          string `json:"url,omitempty"`
+	Folder       string `json:"folder,omitempty"`
 	DownloadedAt string `json:"downloaded_at,omitempty"`
+
+	// Newer state fields
+	Source        string         `json:"source,omitempty"`
+	DisplayName   string         `json:"display_name,omitempty"`
+	Nexus         *app.NexusInfo `json:"nexus,omitempty"`
+	InstalledAt   string         `json:"installed_at,omitempty"`
+	InstalledPath string         `json:"installed_path,omitempty"`
+	Health        string         `json:"health,omitempty"`
+	SHA256        string         `json:"sha256,omitempty"`
+
+	// Convenience
+	ZipRel string `json:"zip_rel,omitempty"`
 }
 
 var downloadsCmd = &cobra.Command{
@@ -34,10 +49,10 @@ var downloadsCmd = &cobra.Command{
 
 		if len(st.Mods) == 0 {
 			if downloadsJSON {
-				fmt.Println("[]")
+				fmt.Fprintln(cmd.OutOrStdout(), "[]")
 				return nil
 			}
-			fmt.Println("(none)")
+			fmt.Fprintln(cmd.OutOrStdout(), "(none)")
 			return nil
 		}
 
@@ -59,10 +74,20 @@ var downloadsCmd = &cobra.Command{
 					URL:         me.URL,
 					Folder:      me.Folder,
 					DownloadedAt: me.DownloadedAt,
+
+					Source:        me.Source,
+					DisplayName:   me.DisplayName,
+					Nexus:         me.Nexus,
+					InstalledAt:   me.InstalledAt,
+					InstalledPath: me.InstalledPath,
+					Health:        me.Health,
+					SHA256:        me.SHA256,
+
+					ZipRel: me.ZIP,
 				})
 			}
 			b, _ := json.MarshalIndent(out, "", "  ")
-			fmt.Println(string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
@@ -72,7 +97,14 @@ var downloadsCmd = &cobra.Command{
 			if me.ZIP != "" {
 				zipAbs = filepath.Join(p.Root, filepath.FromSlash(me.ZIP))
 			}
-			fmt.Printf("[%d] %s\tinstalled=%v\tzip=%s\n", i+1, id, me.Installed, zipAbs)
+
+			// Keep old single-line format, but add a tiny hint when available.
+			// Example: [1] foo installed=false zip=/... source=nexus
+			if me.Source != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "[%d] %s\tinstalled=%v\tzip=%s\tsource=%s\n", i+1, id, me.Installed, zipAbs, me.Source)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "[%d] %s\tinstalled=%v\tzip=%s\n", i+1, id, me.Installed, zipAbs)
+			}
 		}
 
 		return nil
