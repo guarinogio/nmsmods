@@ -15,7 +15,7 @@ import (
 )
 
 func mustPaths() *app.Paths {
-	p, err := app.DefaultPaths()
+	p, err := app.DefaultPathsWithOverride(homeOverride)
 	if err != nil {
 		panic(err)
 	}
@@ -83,9 +83,7 @@ func sortedModIDs(st app.State) []string {
 }
 
 // resolveModArg allows commands to accept either an id (slug) or a numeric index from `downloads`.
-// Example: "1" -> first id in sorted list.
 func resolveModArg(arg string, st app.State) (string, error) {
-	// numeric?
 	if n, err := strconv.Atoi(arg); err == nil {
 		if n <= 0 {
 			return "", fmt.Errorf("invalid index: %d", n)
@@ -96,15 +94,12 @@ func resolveModArg(arg string, st app.State) (string, error) {
 		}
 		return ids[n-1], nil
 	}
-
-	// treat as id
 	if _, ok := st.Mods[arg]; ok {
 		return arg, nil
 	}
 	return "", fmt.Errorf("unknown id: %s (run: nmsmods downloads)", arg)
 }
 
-// joinPathFromState converts a stored relative path (with forward slashes) to an absolute path under root.
 func joinPathFromState(root, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))
 }

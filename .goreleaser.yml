@@ -12,6 +12,8 @@ builds:
     binary: nmsmods
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X nmsmods/internal/app.Version={{.Version}}
     goos:
       - linux
     goarch:

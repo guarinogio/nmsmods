@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// ProposedInstallFolderFromZip inspects the ZIP central directory and guesses the folder
-// that would be installed using the same rule as ChooseInstallFolder:
+// ProposedInstallFolderFromZip guesses the destination folder name without extracting.
 //
-// - If the zip effectively contains a single top-level directory, return that directory name.
-// - Otherwise return fallbackID.
-//
-// This lets `install --dry-run` predict the destination folder without extracting.
+// Heuristic:
+// - If all entries share a single top-level directory A, return A.
+// - If all entries share a single top-level A AND also share a single second-level directory B
+//   AND entries are at least 3 segments deep (A/B/file...), return B (common "double folder").
+// - Else return fallbackID.
 func ProposedInstallFolderFromZip(zipPath string, fallbackID string) (string, error) {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -21,43 +21,59 @@ func ProposedInstallFolderFromZip(zipPath string, fallbackID string) (string, er
 	defer r.Close()
 
 	top := map[string]struct{}{}
+	second := map[string]struct{}{}
+
+	hasAny := false
+	allEligibleForSecond := true // must be true only if ALL entries have len(parts) >= 3
+	seenEligible := false        // at least one entry with len(parts) >= 3
 
 	for _, f := range r.File {
-		name := f.Name
-		name = strings.ReplaceAll(name, "\\", "/")
+		name := strings.ReplaceAll(f.Name, "\\", "/")
 		name = strings.TrimLeft(name, "/")
 		if name == "" || name == "." {
 			continue
 		}
-
-		// normalize and grab first segment
 		clean := path.Clean(name)
 		if clean == "." {
 			continue
 		}
+		hasAny = true
 
-		seg := clean
-		if i := strings.Index(seg, "/"); i >= 0 {
-			seg = seg[:i]
+		parts := strings.Split(clean, "/")
+		if len(parts) >= 1 && parts[0] != "" && parts[0] != "." {
+			top[parts[0]] = struct{}{}
 		}
-		seg = strings.TrimSpace(seg)
-		if seg == "" || seg == "." {
-			continue
-		}
-		top[seg] = struct{}{}
-		// quick exit if more than 1 distinct top-level item
 		if len(top) > 1 {
 			return fallbackID, nil
 		}
-	}
 
-	// If we found exactly one top-level folder name, use it.
-	if len(top) == 1 {
-		for k := range top {
-			return k, nil
+		// Only consider "double folder" if entries look like A/B/file... (>=3 segments)
+		if len(parts) >= 3 {
+			seenEligible = true
+			if parts[1] != "" && parts[1] != "." {
+				second[parts[1]] = struct{}{}
+			}
+		} else {
+			allEligibleForSecond = false
 		}
 	}
 
-	// Empty zip or weird structure: fallback
+	if !hasAny {
+		return fallbackID, nil
+	}
+
+	if len(top) == 1 {
+		// double-folder case
+		if seenEligible && allEligibleForSecond && len(second) == 1 {
+			for b := range second {
+				return b, nil
+			}
+		}
+		// single-folder case
+		for a := range top {
+			return a, nil
+		}
+	}
+
 	return fallbackID, nil
 }

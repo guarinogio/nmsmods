@@ -1,7 +1,7 @@
-
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,56 +12,120 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var doctorJSON bool
+
+type doctorReport struct {
+	OK                bool     `json:"ok"`
+	DataDir           string   `json:"data_dir"`
+	Downloads         string   `json:"downloads"`
+	Staging           string   `json:"staging"`
+	GamePath          string   `json:"game_path,omitempty"`
+	ModsDir           string   `json:"mods_dir,omitempty"`
+	InstalledModFolders []string `json:"installed_mod_folders,omitempty"`
+	TrackedDownloads  int      `json:"tracked_downloads"`
+	Issues            []string `json:"issues,omitempty"`
+}
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Run basic checks (paths, downloads, installed mods)",
+	Short: "Check setup and show current configuration/state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
+
+		rep := doctorReport{
+			OK:        true,
+			DataDir:   p.Root,
+			Downloads: p.Downloads,
+			Staging:   p.Staging,
+		}
+
 		cfg, err := loadConfigAndMaybeGuess(p)
 		if err != nil {
-			return err
-		}
-		fmt.Println("Data dir:", p.Root)
-		fmt.Println("Downloads:", p.Downloads)
-		fmt.Println("Staging:", p.Staging)
-
-		if cfg.GamePath == "" {
-			fmt.Println("Game path: (not set)")
-			fmt.Println("Tip: nmsmods set-path <path>")
+			rep.OK = false
+			rep.Issues = append(rep.Issues, "failed to load config: "+err.Error())
 		} else {
-			fmt.Println("Game path:", cfg.GamePath)
-			game, gerr := nms.ValidateGamePath(cfg.GamePath)
-			if gerr != nil {
-				fmt.Println("Game path validation: ERROR:", gerr)
+			rep.GamePath = cfg.GamePath
+			if cfg.GamePath == "" {
+				rep.OK = false
+				rep.Issues = append(rep.Issues, "game path not set (run: nmsmods set-path <path>)")
 			} else {
-				_ = nms.EnsureModsDir(game)
-				fmt.Println("Mods dir:", game.ModsDir)
-				installed, _ := nms.ListInstalledModFolders(game)
-				fmt.Printf("Installed mod folders: %d\n", len(installed))
-				for _, m := range installed {
-					fmt.Println(" -", m)
+				game, gerr := nms.ValidateGamePath(cfg.GamePath)
+				if gerr != nil {
+					rep.OK = false
+					rep.Issues = append(rep.Issues, "invalid game path: "+gerr.Error())
+				} else {
+					rep.ModsDir = game.ModsDir
+					if err := nms.EnsureModsDir(game); err != nil {
+						rep.OK = false
+						rep.Issues = append(rep.Issues, "failed to ensure mods dir: "+err.Error())
+					} else {
+						modsList, lerr := nms.ListInstalledModFolders(game)
+						if lerr != nil {
+							rep.OK = false
+							rep.Issues = append(rep.Issues, "failed to list installed mods: "+lerr.Error())
+						} else {
+							rep.InstalledModFolders = modsList
+						}
+					}
 				}
 			}
 		}
 
-		// downloads from state
-		st, err := app.LoadState(p.State)
-		if err != nil {
-			return err
+		st, serr := app.LoadState(p.State)
+		if serr != nil {
+			rep.OK = false
+			rep.Issues = append(rep.Issues, "failed to load state: "+serr.Error())
+		} else {
+			rep.TrackedDownloads = len(st.Mods)
 		}
-		fmt.Printf("Tracked downloads: %d\n", len(st.Mods))
-		for id, me := range st.Mods {
-			zipAbs := filepath.Join(p.Root, filepath.FromSlash(me.ZIP))
-			zipStatus := "missing"
-			if me.ZIP != "" {
-				if _, err := os.Stat(zipAbs); err == nil {
-					zipStatus = "present"
-				}
-			} else {
-				zipStatus = "(none)"
+
+		if doctorJSON {
+			b, _ := json.MarshalIndent(rep, "", "  ")
+			fmt.Println(string(b))
+			if !rep.OK {
+				return fmt.Errorf("doctor found issues")
 			}
-			fmt.Printf(" - %s | installed=%v | zip=%s\n", id, me.Installed, zipStatus)
+			return nil
 		}
+
+		fmt.Println("Data dir:", rep.DataDir)
+		fmt.Println("Downloads:", rep.Downloads)
+		fmt.Println("Staging:", rep.Staging)
+		fmt.Println("Game path:", rep.GamePath)
+		if rep.ModsDir != "" {
+			fmt.Println("Mods dir:", rep.ModsDir)
+		}
+		if rep.InstalledModFolders != nil {
+			fmt.Printf("Installed mod folders: %d\n", len(rep.InstalledModFolders))
+			for _, m := range rep.InstalledModFolders {
+				fmt.Println(" -", m)
+			}
+		}
+		fmt.Println("Tracked downloads:", rep.TrackedDownloads)
+
+		if !rep.OK {
+			fmt.Println("Issues:")
+			for _, i := range rep.Issues {
+				fmt.Println(" -", i)
+			}
+			// Return error so exit code is non-zero
+			return fmt.Errorf("doctor found issues")
+		}
+
+		// Also warn if downloads dir is not writable (common)
+		if f, err := os.CreateTemp(rep.Downloads, ".writecheck-*"); err != nil {
+			fmt.Println("Warning: downloads dir not writable:", rep.Downloads, err.Error())
+		} else {
+			_ = os.Remove(f.Name())
+		}
+
+		// sanity: state paths exist
+		_ = os.MkdirAll(filepath.Dir(p.State), 0o755)
+
 		return nil
 	},
+}
+
+func init() {
+	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "Output in JSON format")
 }

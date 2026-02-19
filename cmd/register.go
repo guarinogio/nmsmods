@@ -4,6 +4,8 @@ import "github.com/spf13/cobra"
 
 // registerCommands centralizes wiring so root.go never drifts from actual cmd files.
 func registerCommands(root *cobra.Command) {
+	root.AddCommand(versionCmd)
+
 	root.AddCommand(whereCmd)
 	root.AddCommand(setPathCmd)
 	root.AddCommand(doctorCmd)
@@ -22,4 +24,5 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(rmDownloadCmd)
 
 	root.AddCommand(cleanCmd)
+	root.AddCommand(resetCmd)
 }

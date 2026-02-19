@@ -17,8 +17,8 @@ import (
 //   NMSMODS_MAX_TOTAL_BYTES  (default 50 GiB)
 //   NMSMODS_MAX_FILES        (default 20000)
 const (
-	defaultMaxFileBytes  = int64(8) * 1024 * 1024 * 1024        // 8 GiB
-	defaultMaxTotalBytes = int64(50) * 1024 * 1024 * 1024       // 50 GiB
+	defaultMaxFileBytes  = int64(8) * 1024 * 1024 * 1024  // 8 GiB
+	defaultMaxTotalBytes = int64(50) * 1024 * 1024 * 1024 // 50 GiB
 	defaultMaxFiles      = 20000
 )
 
@@ -55,7 +55,6 @@ func readLimitsFromEnv() extractLimits {
 }
 
 func isTraversal(cleanRel string) bool {
-	// cleanRel must already be filepath.Clean()'d and must not be absolute.
 	if cleanRel == ".." {
 		return true
 	}
@@ -63,11 +62,26 @@ func isTraversal(cleanRel string) bool {
 	return strings.HasPrefix(cleanRel, prefix)
 }
 
+func looksLikeWindowsAbsPath(s string) bool {
+	// e.g. "C:\foo" or "C:/foo" (zip often uses forward slashes)
+	if len(s) >= 2 && s[1] == ':' {
+		return true
+	}
+	return false
+}
+
 func sanitizeZipName(name string) (string, error) {
+	// IMPORTANT: reject absolute-like entries BEFORE normalizing away the leading slash.
+	// ZIP entries can start with "/" or "\" to try to escape.
+	if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "\\") {
+		return "", fmt.Errorf("absolute path not allowed: %s", name)
+	}
+	if looksLikeWindowsAbsPath(name) {
+		return "", fmt.Errorf("absolute path not allowed: %s", name)
+	}
+
 	// ZIP names are spec'd with forward slashes; attackers may include backslashes.
 	name = strings.ReplaceAll(name, "\\", "/")
-	// Trim any leading slashes to avoid absolute-ish paths.
-	name = strings.TrimLeft(name, "/")
 
 	if name == "" || name == "." {
 		return "", errors.New("empty zip entry name")

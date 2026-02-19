@@ -1,67 +1,125 @@
-
 package nms
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Game struct {
-	Root   string
-	ModsDir string // <Root>/GAMEDATA/MODS
+	Path    string
+	DataDir string
+	ModsDir string
 }
 
-func ValidateGamePath(root string) (*Game, error) {
-	if root == "" {
-		return nil, errors.New("game path is empty")
+// ValidateGamePath checks whether the given path looks like a real, installed No Man's Sky directory.
+// This is intentionally stricter than "folder exists" because Steam can leave empty directories after uninstall.
+//
+// Requirements:
+// - <path>/GAMEDATA exists
+// - <path>/Binaries exists
+// - <path>/GAMEDATA/PCBANKS exists
+// - <path>/GAMEDATA/PCBANKS contains at least one .pak file
+//
+// If the user reinstalls the game to the same location, these checks will pass again automatically.
+func ValidateGamePath(gamePath string) (*Game, error) {
+	if gamePath == "" {
+		return nil, fmt.Errorf("empty game path")
 	}
-	stat, err := os.Stat(root)
+
+	root := filepath.Clean(gamePath)
+
+	st, err := os.Stat(root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("game path not found: %w", err)
 	}
-	if !stat.IsDir() {
-		return nil, errors.New("game path is not a directory")
-	}
-
-	// Basic heuristics: expect GAMEDATA and Binaries directories (common to most installs).
-	// Don't require executables since Linux/Proton variants differ.
-	gamedata := filepath.Join(root, "GAMEDATA")
-	if _, err := os.Stat(gamedata); err != nil {
-		return nil, errors.New("GAMEDATA directory not found under game path")
-	}
-	binaries := filepath.Join(root, "Binaries")
-	if _, err := os.Stat(binaries); err != nil {
-		// allow missing, but most installs have it; keep a soft check by not erroring hard
+	if !st.IsDir() {
+		return nil, fmt.Errorf("game path is not a directory: %s", root)
 	}
 
-	mods := filepath.Join(root, "GAMEDATA", "MODS")
-	return &Game{Root: root, ModsDir: mods}, nil
+	dataDir := filepath.Join(root, "GAMEDATA")
+	binDir := filepath.Join(root, "Binaries")
+	pcbanks := filepath.Join(dataDir, "PCBANKS")
+
+	if !isDir(dataDir) {
+		return nil, fmt.Errorf("missing GAMEDATA directory (game not installed here?): %s", dataDir)
+	}
+	if !isDir(binDir) {
+		return nil, fmt.Errorf("missing Binaries directory (game not installed here?): %s", binDir)
+	}
+	if !isDir(pcbanks) {
+		return nil, fmt.Errorf("missing GAMEDATA/PCBANKS directory (game not installed here?): %s", pcbanks)
+	}
+
+	// Strong signal the game content exists: at least one .pak in PCBANKS
+	hasPak, err := dirHasFileWithExt(pcbanks, ".pak")
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect PCBANKS: %w", err)
+	}
+	if !hasPak {
+		return nil, fmt.Errorf("no .pak files found in PCBANKS (game likely not installed): %s", pcbanks)
+	}
+
+	return &Game{
+		Path:    root,
+		DataDir: dataDir,
+		ModsDir: filepath.Join(dataDir, "MODS"),
+	}, nil
 }
 
+// EnsureModsDir ensures the mods directory exists.
+// This assumes ValidateGamePath has already succeeded; i.e., the game is installed.
 func EnsureModsDir(g *Game) error {
-	if g == nil || g.ModsDir == "" {
-		return errors.New("game not initialized")
+	if g == nil {
+		return fmt.Errorf("nil game")
 	}
 	return os.MkdirAll(g.ModsDir, 0o755)
 }
 
+// ListInstalledModFolders returns the list of subdirectories in GAMEDATA/MODS.
 func ListInstalledModFolders(g *Game) ([]string, error) {
 	if g == nil {
-		return nil, errors.New("game not initialized")
+		return nil, fmt.Errorf("nil game")
 	}
-	entries, err := os.ReadDir(g.ModsDir)
+	if !isDir(g.ModsDir) {
+		// not an error; means no mods dir yet
+		return []string{}, nil
+	}
+
+	ents, err := os.ReadDir(g.ModsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
-		}
 		return nil, err
 	}
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
+
+	out := make([]string, 0, len(ents))
+	for _, e := range ents {
 		if e.IsDir() {
 			out = append(out, e.Name())
 		}
 	}
 	return out, nil
+}
+
+func isDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
+}
+
+func dirHasFileWithExt(dir, ext string) (bool, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	ext = strings.ToLower(ext)
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		name := strings.ToLower(e.Name())
+		if strings.HasSuffix(name, ext) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
