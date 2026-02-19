@@ -26,7 +26,19 @@ var rmDownloadCmd = &cobra.Command{
 				return err
 			}
 			me := st.Mods[id]
+
+			// If there is no ZIP tracked, allow cleanup for non-installed local/dir entries
+			// by removing the state record (keeps UX tidy).
 			if me.ZIP == "" {
+				installed := app.IsInstalledInAnyProfile(me)
+				if !installed && (me.Source == "local" || me.Source == "url") {
+					delete(st.Mods, id)
+					if err := app.SaveState(p.State, st); err != nil {
+						return err
+					}
+					fmt.Println("Removed record:", id)
+					return nil
+				}
 				return fmt.Errorf("no zip tracked for %s", id)
 			}
 
@@ -38,7 +50,15 @@ var rmDownloadCmd = &cobra.Command{
 			}
 
 			me.ZIP = ""
-			st.Mods[id] = me
+
+			// If not installed anywhere and this was a local download, remove the record entirely.
+			// Nexus entries are typically kept (for pin/update tracking).
+			if !app.IsInstalledInAnyProfile(me) && me.Source == "local" {
+				delete(st.Mods, id)
+			} else {
+				st.Mods[id] = me
+			}
+
 			if err := app.SaveState(p.State, st); err != nil {
 				return err
 			}

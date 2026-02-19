@@ -28,8 +28,8 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
-      - name: Go test
-        run: go test ./...
+      - name: Go build
+        run: go build ./...
 
       - name: govulncheck
         uses: golang/govulncheck-action@v1

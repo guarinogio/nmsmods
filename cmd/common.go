@@ -84,6 +84,11 @@ func sortedModIDs(st app.State) []string {
 
 // resolveModArg allows commands to accept either an id (slug) or a numeric index from `downloads`.
 func resolveModArg(arg string, st app.State) (string, error) {
+	// Prefer exact ID match (even if the ID is numeric), then fall back to index.
+	// This avoids ambiguous UX when users intentionally use numeric IDs (e.g. Nexus mod ids).
+	if _, ok := st.Mods[arg]; ok {
+		return arg, nil
+	}
 	if n, err := strconv.Atoi(arg); err == nil {
 		if n <= 0 {
 			return "", fmt.Errorf("invalid index: %d", n)
@@ -93,9 +98,6 @@ func resolveModArg(arg string, st app.State) (string, error) {
 			return "", fmt.Errorf("index out of range: %d (have %d)", n, len(ids))
 		}
 		return ids[n-1], nil
-	}
-	if _, ok := st.Mods[arg]; ok {
-		return arg, nil
 	}
 	return "", fmt.Errorf("unknown id: %s (run: nmsmods downloads)", arg)
 }

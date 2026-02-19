@@ -11,6 +11,7 @@ var nexusWhoamiCmd = &cobra.Command{
 	Use:   "whoami",
 	Short: "Validate current Nexus API key and show user info",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		showEmail, _ := cmd.Flags().GetBool("show-email")
 		_, cfg, err := nexusPathsConfig()
 		if err != nil {
 			return err
@@ -38,7 +39,8 @@ var nexusWhoamiCmd = &cobra.Command{
 		if me.Name != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "name:    %s\n", me.Name)
 		}
-		if me.Email != "" {
+		// Avoid leaking PII in logs by default.
+		if showEmail && me.Email != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "email:   %s\n", me.Email)
 		}
 		if me.IsPremium {
@@ -53,5 +55,6 @@ var nexusWhoamiCmd = &cobra.Command{
 
 func init() {
 	nexusWhoamiCmd.Flags().Bool("json", false, "Output in JSON format")
+	nexusWhoamiCmd.Flags().Bool("show-email", false, "Include email address in text output")
 	nexusCmd.AddCommand(nexusWhoamiCmd)
 }
