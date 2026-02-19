@@ -1,4 +1,3 @@
-// cmd/register.go
 package cmd
 
 import "github.com/spf13/cobra"
@@ -8,10 +7,19 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(whereCmd)
 	root.AddCommand(setPathCmd)
 	root.AddCommand(doctorCmd)
+
 	root.AddCommand(downloadCmd)
 	root.AddCommand(downloadsCmd)
+	root.AddCommand(infoCmd)
+	root.AddCommand(verifyCmd)
+
 	root.AddCommand(installCmd)
+	root.AddCommand(installDirCmd)
+	root.AddCommand(reinstallCmd)
+
 	root.AddCommand(installedCmd)
 	root.AddCommand(uninstallCmd)
 	root.AddCommand(rmDownloadCmd)
+
+	root.AddCommand(cleanCmd)
 }

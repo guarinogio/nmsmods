@@ -1,13 +1,19 @@
-
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"nmsmods/internal/nms"
 
 	"github.com/spf13/cobra"
 )
+
+var installedJSON bool
+
+type installedRow struct {
+	Folder string `json:"folder"`
+}
 
 var installedCmd = &cobra.Command{
 	Use:   "installed",
@@ -22,6 +28,17 @@ var installedCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if installedJSON {
+			out := make([]installedRow, 0, len(modsList))
+			for _, m := range modsList {
+				out = append(out, installedRow{Folder: m})
+			}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			fmt.Println(string(b))
+			return nil
+		}
+
 		if len(modsList) == 0 {
 			fmt.Println("(none)")
 			return nil
@@ -31,4 +48,8 @@ var installedCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func init() {
+	installedCmd.Flags().BoolVar(&installedJSON, "json", false, "Output in JSON format")
 }
