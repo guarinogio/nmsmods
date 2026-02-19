@@ -11,11 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var forceInstall bool
+var noOverwrite bool
+var dryRunInstall bool
 
 var installCmd = &cobra.Command{
 	Use:   "install <id-or-index>",
-	Short: "Install a downloaded mod into <NMS>/GAMEDATA/MODS",
+	Short: "Install a downloaded mod into <NMS>/GAMEDATA/MODS (overwrites by default)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
@@ -37,13 +38,42 @@ var installCmd = &cobra.Command{
 
 		me := st.Mods[id]
 		if me.ZIP == "" {
-			return fmt.Errorf("no zip recorded for %s. Use: nmsmods download <url> [--id %s]", id, id)
+			return fmt.Errorf("no zip recorded for %s. Use: nmsmods download <url-or-zip> [--id %s]", id, id)
 		}
 		zipAbs := joinPathFromState(p.Root, me.ZIP)
 		if _, err := os.Stat(zipAbs); err != nil {
 			return fmt.Errorf("zip not found: %s", zipAbs)
 		}
 
+		// Predict folder name without extracting (useful for --dry-run).
+		folder, err := mods.ProposedInstallFolderFromZip(zipAbs, id)
+		if err != nil {
+			return err
+		}
+		dest := filepath.Join(game.ModsDir, folder)
+
+		_, destErr := os.Stat(dest)
+		destExists := destErr == nil
+
+		if dryRunInstall {
+			fmt.Println("[dry-run] Would install:")
+			fmt.Println("  id:     ", id)
+			fmt.Println("  zip:    ", zipAbs)
+			fmt.Println("  folder: ", folder)
+			fmt.Println("  dest:   ", dest)
+			if destExists {
+				if noOverwrite {
+					fmt.Println("  action:  SKIP (destination exists and --no-overwrite set)")
+				} else {
+					fmt.Println("  action:  REPLACE (destination exists; overwrite is default)")
+				}
+			} else {
+				fmt.Println("  action:  INSTALL")
+			}
+			return nil
+		}
+
+		// Real install path: extract -> choose folder -> copy
 		stageDir := filepath.Join(p.Staging, id)
 		_ = os.RemoveAll(stageDir)
 		if err := os.MkdirAll(stageDir, 0o755); err != nil {
@@ -55,18 +85,21 @@ var installCmd = &cobra.Command{
 			return err
 		}
 
+		// Choose again based on extracted layout (authoritative)
 		folder, srcPath, err := mods.ChooseInstallFolder(stageDir, id)
 		if err != nil {
 			return err
 		}
-		dest := filepath.Join(game.ModsDir, folder)
+		dest = filepath.Join(game.ModsDir, folder)
 
 		if _, err := os.Stat(dest); err == nil {
-			if !forceInstall {
-				return fmt.Errorf("destination exists: %s (use --force to overwrite)", dest)
+			if noOverwrite {
+				return fmt.Errorf("destination exists: %s (run without --no-overwrite to replace it)", dest)
 			}
-			fmt.Println("Overwriting:", dest)
-			_ = os.RemoveAll(dest)
+			fmt.Println("Replacing existing install:", dest)
+			if err := os.RemoveAll(dest); err != nil {
+				return err
+			}
 		}
 
 		fmt.Println("Installing folder:", folder)
@@ -87,5 +120,6 @@ var installCmd = &cobra.Command{
 }
 
 func init() {
-	installCmd.Flags().BoolVar(&forceInstall, "force", false, "Overwrite if destination folder already exists")
+	installCmd.Flags().BoolVar(&noOverwrite, "no-overwrite", false, "Do not overwrite if destination folder already exists")
+	installCmd.Flags().BoolVar(&dryRunInstall, "dry-run", false, "Print what would happen without making changes")
 }
