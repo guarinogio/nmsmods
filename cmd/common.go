@@ -25,32 +25,21 @@ func mustPaths() *app.Paths {
 	return p
 }
 
-func loadConfigAndMaybeGuess(p *app.Paths) (app.Config, error) {
-	cfg, err := app.LoadConfig(p.Config)
-	if err != nil {
-		return cfg, err
-	}
-	if cfg.GamePath != "" {
-		return cfg, nil
-	}
-	guesses, err := steam.GuessNMSPaths()
-	if err != nil {
-		return cfg, err
-	}
-	if len(guesses) > 0 {
-		cfg.GamePath = guesses[0]
-		_ = app.SaveConfig(p.Config, cfg) // best-effort
-	}
-	return cfg, nil
+func loadConfig(p *app.Paths) (app.Config, error) {
+	return app.LoadConfig(p.Config)
+}
+
+func detectGamePaths() ([]string, error) {
+	return steam.GuessNMSPaths()
 }
 
 func requireGame(p *app.Paths) (*app.Config, *nms.Game, error) {
-	cfg, err := loadConfigAndMaybeGuess(p)
+	cfg, err := loadConfig(p)
 	if err != nil {
 		return nil, nil, err
 	}
 	if cfg.GamePath == "" {
-		return &cfg, nil, errors.New("game path not set. Use: nmsmods set-path <path>")
+		return &cfg, nil, errors.New("game path not set. Use: nmsmods set-path <path> (or run: nmsmods where)")
 	}
 	game, err := nms.ValidateGamePath(cfg.GamePath)
 	if err != nil {

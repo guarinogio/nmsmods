@@ -29,11 +29,11 @@ var installDirCmd = &cobra.Command{
 				return err
 			}
 
-			st, err := os.Stat(src)
+			fi, err := os.Stat(src)
 			if err != nil {
 				return err
 			}
-			if !st.IsDir() {
+			if !fi.IsDir() {
 				return fmt.Errorf("not a directory: %s", src)
 			}
 
@@ -42,11 +42,16 @@ var installDirCmd = &cobra.Command{
 				id = mods.SlugFromURL(filepath.Base(src))
 			}
 
-			// Heuristic: flatten common outer folders (same as zip extraction layout).
+			state, err := app.LoadState(p.State)
+			if err != nil {
+				return err
+			}
+
 			folder, copyFrom, err := mods.ChooseInstallFolder(src, id)
 			if err != nil {
 				return err
 			}
+			folder, collided := mods.ResolveFolderCollision(id, folder, state)
 			dest := filepath.Join(game.ModsDir, folder)
 
 			if installDirDryRun {
@@ -56,6 +61,9 @@ var installDirCmd = &cobra.Command{
 				fmt.Println("  folder: ", folder)
 				fmt.Println("  from:   ", copyFrom)
 				fmt.Println("  dest:   ", dest)
+				if collided {
+					fmt.Println("  note:    collision avoided (another mod uses same folder)")
+				}
 				if _, err := os.Stat(dest); err == nil {
 					if installDirNoOverwrite {
 						fmt.Println("  action:  SKIP (destination exists and --no-overwrite set)")
@@ -83,11 +91,6 @@ var installDirCmd = &cobra.Command{
 				return err
 			}
 
-			// Update state
-			state, err := app.LoadState(p.State)
-			if err != nil {
-				return err
-			}
 			me := state.Mods[id]
 			me.Folder = folder
 			me.Installed = true

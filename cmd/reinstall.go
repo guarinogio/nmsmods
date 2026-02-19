@@ -50,6 +50,7 @@ var reinstallCmd = &cobra.Command{
 			if destFolder == "" {
 				destFolder = folderGuess
 			}
+			destFolder, _ = mods.ResolveFolderCollision(id, destFolder, st)
 			dest := filepath.Join(game.ModsDir, destFolder)
 
 			if reinstallDryRun {
@@ -89,6 +90,7 @@ var reinstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			folder, _ = mods.ResolveFolderCollision(id, folder, st)
 			dest = filepath.Join(game.ModsDir, folder)
 
 			if _, err := os.Stat(dest); err == nil {

@@ -51,6 +51,9 @@ var installCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+
+			// Avoid clobbering another installed mod folder.
+			folder, collided := mods.ResolveFolderCollision(id, folder, st)
 			dest := filepath.Join(game.ModsDir, folder)
 
 			_, destErr := os.Stat(dest)
@@ -62,6 +65,9 @@ var installCmd = &cobra.Command{
 				fmt.Println("  zip:    ", zipAbs)
 				fmt.Println("  folder: ", folder)
 				fmt.Println("  dest:   ", dest)
+				if collided {
+					fmt.Println("  note:    collision avoided (another mod uses same folder)")
+				}
 				if destExists {
 					if noOverwrite {
 						fmt.Println("  action:  SKIP (destination exists and --no-overwrite set)")
@@ -91,6 +97,7 @@ var installCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			folder, _ = mods.ResolveFolderCollision(id, folder, st)
 			dest = filepath.Join(game.ModsDir, folder)
 
 			if _, err := os.Stat(dest); err == nil {
@@ -113,7 +120,6 @@ var installCmd = &cobra.Command{
 			me.InstalledPath = dest
 			me.InstalledAt = app.NowRFC3339()
 
-			// health check
 			ok, verr := mods.HasRelevantFiles(dest)
 			if verr != nil || !ok {
 				fmt.Println("Warning: installed folder contains no .EXML/.MBIN files (or health check failed)")
