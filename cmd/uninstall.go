@@ -21,47 +21,78 @@ var uninstallCmd = &cobra.Command{
 		p := mustPaths()
 		target := args[0]
 
-		_, game, err := requireGame(p)
-		if err != nil {
-			return err
-		}
-
-		st, err := app.LoadState(p.State)
-		if err != nil {
-			return err
-		}
-
-		// Try interpret as tracked id/index first.
-		treatedAsTracked := false
-		var trackedID string
-		var folder string
-
-		if _, aerr := strconv.Atoi(target); aerr == nil {
-			if id, rerr := resolveModArg(target, st); rerr == nil {
-				treatedAsTracked = true
-				trackedID = id
+		return withStateLock(p, func() error {
+			_, game, err := requireGame(p)
+			if err != nil {
+				return err
 			}
-		} else {
-			if _, ok := st.Mods[target]; ok {
-				treatedAsTracked = true
-				trackedID = target
-			}
-		}
 
-		if treatedAsTracked {
-			me := st.Mods[trackedID]
-			if me.Folder == "" {
-				return fmt.Errorf("tracked mod %s has no installed folder recorded", trackedID)
+			st, err := app.LoadState(p.State)
+			if err != nil {
+				return err
 			}
-			folder = me.Folder
-			dest := filepath.Join(game.ModsDir, folder)
+
+			treatedAsTracked := false
+			var trackedID string
+			var folder string
+
+			if _, aerr := strconv.Atoi(target); aerr == nil {
+				if id, rerr := resolveModArg(target, st); rerr == nil {
+					treatedAsTracked = true
+					trackedID = id
+				}
+			} else {
+				if _, ok := st.Mods[target]; ok {
+					treatedAsTracked = true
+					trackedID = target
+				}
+			}
+
+			if treatedAsTracked {
+				me := st.Mods[trackedID]
+				if me.Folder == "" {
+					return fmt.Errorf("tracked mod %s has no installed folder recorded", trackedID)
+				}
+				folder = me.Folder
+				dest := filepath.Join(game.ModsDir, folder)
+
+				if dryRunUninstall {
+					fmt.Println("[dry-run] Would uninstall tracked mod:")
+					fmt.Println("  id:     ", trackedID)
+					fmt.Println("  folder: ", folder)
+					fmt.Println("  dest:   ", dest)
+					fmt.Println("  action:  REMOVE folder; set installed=false in state.json")
+					return nil
+				}
+
+				if _, err := os.Stat(dest); os.IsNotExist(err) {
+					return fmt.Errorf("not found: %s", dest)
+				}
+				if err := os.RemoveAll(dest); err != nil {
+					return err
+				}
+
+				me.Installed = false
+				me.Health = ""
+				me.InstalledPath = ""
+				me.InstalledAt = ""
+				st.Mods[trackedID] = me
+				if err := app.SaveState(p.State, st); err != nil {
+					return err
+				}
+
+				fmt.Println("Removed:", dest)
+				return nil
+			}
+
+			// Otherwise treat as folder name directly.
+			dest := filepath.Join(game.ModsDir, target)
 
 			if dryRunUninstall {
-				fmt.Println("[dry-run] Would uninstall tracked mod:")
-				fmt.Println("  id:     ", trackedID)
-				fmt.Println("  folder: ", folder)
+				fmt.Println("[dry-run] Would uninstall by folder:")
+				fmt.Println("  folder: ", target)
 				fmt.Println("  dest:   ", dest)
-				fmt.Println("  action:  REMOVE folder; set installed=false in state.json")
+				fmt.Println("  action:  REMOVE folder")
 				return nil
 			}
 
@@ -71,34 +102,9 @@ var uninstallCmd = &cobra.Command{
 			if err := os.RemoveAll(dest); err != nil {
 				return err
 			}
-
-			me.Installed = false
-			st.Mods[trackedID] = me
-			_ = app.SaveState(p.State, st)
-
 			fmt.Println("Removed:", dest)
 			return nil
-		}
-
-		// Otherwise treat as folder name directly.
-		dest := filepath.Join(game.ModsDir, target)
-
-		if dryRunUninstall {
-			fmt.Println("[dry-run] Would uninstall by folder:")
-			fmt.Println("  folder: ", target)
-			fmt.Println("  dest:   ", dest)
-			fmt.Println("  action:  REMOVE folder")
-			return nil
-		}
-
-		if _, err := os.Stat(dest); os.IsNotExist(err) {
-			return fmt.Errorf("not found: %s", dest)
-		}
-		if err := os.RemoveAll(dest); err != nil {
-			return err
-		}
-		fmt.Println("Removed:", dest)
-		return nil
+		})
 	},
 }
 

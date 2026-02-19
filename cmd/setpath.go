@@ -1,4 +1,3 @@
-
 package cmd
 
 import (
@@ -12,19 +11,29 @@ import (
 
 var setPathCmd = &cobra.Command{
 	Use:   "set-path <path>",
-	Short: "Set No Man's Sky installation path",
+	Short: "Set the No Man's Sky installation path (Steam library folder)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
-		path := args[0]
-		if _, err := nms.ValidateGamePath(path); err != nil {
-			return err
-		}
-		cfg := app.Config{GamePath: path}
-		if err := app.SaveConfig(p.Config, cfg); err != nil {
-			return err
-		}
-		fmt.Println("Saved game path:", path)
-		return nil
+		newPath := args[0]
+
+		return withStateLock(p, func() error {
+			// Validate now so config doesn't get junk
+			if _, err := nms.ValidateGamePath(newPath); err != nil {
+				return fmt.Errorf("invalid game path: %w", err)
+			}
+
+			cfg, err := app.LoadConfig(p.Config)
+			if err != nil {
+				return err
+			}
+			cfg.GamePath = newPath
+			if err := app.SaveConfig(p.Config, cfg); err != nil {
+				return err
+			}
+
+			fmt.Println("Game path set to:", newPath)
+			return nil
+		})
 	},
 }

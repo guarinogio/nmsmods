@@ -29,81 +29,84 @@ Optional:
 - --dry-run: show what would be deleted without deleting`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
-		st, err := app.LoadState(p.State)
-		if err != nil {
-			return err
-		}
 
-		// Default behavior: staging cleanup enabled if no flags explicitly set
-		if !cmd.Flags().Changed("staging") && !cmd.Flags().Changed("parts") && !cmd.Flags().Changed("orphan-zips") {
-			cleanStaging = true
-		}
-
-		var actions []string
-
-		if cleanStaging {
-			actions = append(actions, fmt.Sprintf("remove: %s", p.Staging))
-			if !cleanDryRun {
-				_ = os.RemoveAll(p.Staging)
-				_ = os.MkdirAll(p.Staging, 0o755)
+		return withStateLock(p, func() error {
+			st, err := app.LoadState(p.State)
+			if err != nil {
+				return err
 			}
-		}
 
-		if cleanParts {
-			matches, _ := filepath.Glob(filepath.Join(p.Downloads, "*.part"))
-			for _, m := range matches {
-				actions = append(actions, fmt.Sprintf("remove: %s", m))
+			// Default behavior: staging cleanup enabled if no flags explicitly set
+			if !cmd.Flags().Changed("staging") && !cmd.Flags().Changed("parts") && !cmd.Flags().Changed("orphan-zips") {
+				cleanStaging = true
+			}
+
+			var actions []string
+
+			if cleanStaging {
+				actions = append(actions, fmt.Sprintf("remove: %s", p.Staging))
 				if !cleanDryRun {
-					_ = os.Remove(m)
+					_ = os.RemoveAll(p.Staging)
+					_ = os.MkdirAll(p.Staging, 0o755)
 				}
 			}
-		}
 
-		if cleanOrphanZips {
-			// Build set of referenced zip absolute paths
-			ref := map[string]struct{}{}
-			for _, me := range st.Mods {
-				if me.ZIP == "" {
-					continue
+			if cleanParts {
+				matches, _ := filepath.Glob(filepath.Join(p.Downloads, "*.part"))
+				for _, m := range matches {
+					actions = append(actions, fmt.Sprintf("remove: %s", m))
+					if !cleanDryRun {
+						_ = os.Remove(m)
+					}
 				}
-				abs := joinPathFromState(p.Root, me.ZIP)
-				ref[abs] = struct{}{}
 			}
 
-			entries, err := os.ReadDir(p.Downloads)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
+			if cleanOrphanZips {
+				// Build set of referenced zip absolute paths
+				ref := map[string]struct{}{}
+				for _, me := range st.Mods {
+					if me.ZIP == "" {
 						continue
 					}
-					if !isZipFile(e.Name()) {
-						continue
-					}
-					abs := filepath.Join(p.Downloads, e.Name())
-					if _, ok := ref[abs]; !ok {
-						actions = append(actions, fmt.Sprintf("remove orphan: %s", abs))
-						if !cleanDryRun {
-							_ = os.Remove(abs)
+					abs := joinPathFromState(p.Root, me.ZIP)
+					ref[abs] = struct{}{}
+				}
+
+				entries, err := os.ReadDir(p.Downloads)
+				if err == nil {
+					for _, e := range entries {
+						if e.IsDir() {
+							continue
+						}
+						if !isZipFile(e.Name()) {
+							continue
+						}
+						abs := filepath.Join(p.Downloads, e.Name())
+						if _, ok := ref[abs]; !ok {
+							actions = append(actions, fmt.Sprintf("remove orphan: %s", abs))
+							if !cleanDryRun {
+								_ = os.Remove(abs)
+							}
 						}
 					}
 				}
 			}
-		}
 
-		if len(actions) == 0 {
-			fmt.Println("(nothing to do)")
+			if len(actions) == 0 {
+				fmt.Println("(nothing to do)")
+				return nil
+			}
+
+			if cleanDryRun {
+				fmt.Println("[dry-run] Would remove:")
+			} else {
+				fmt.Println("Cleaned:")
+			}
+			for _, a := range actions {
+				fmt.Println(" -", a)
+			}
 			return nil
-		}
-
-		if cleanDryRun {
-			fmt.Println("[dry-run] Would remove:")
-		} else {
-			fmt.Println("Cleaned:")
-		}
-		for _, a := range actions {
-			fmt.Println(" -", a)
-		}
-		return nil
+		})
 	},
 }
 

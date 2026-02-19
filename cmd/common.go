@@ -103,3 +103,14 @@ func resolveModArg(arg string, st app.State) (string, error) {
 func joinPathFromState(root, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))
 }
+
+// withStateLock ensures we don't corrupt config/state when multiple nmsmods processes run.
+// Wrap any command that writes config/state or deletes managed download assets.
+func withStateLock(p *app.Paths, fn func() error) error {
+	l, err := app.AcquireLock(p.Root)
+	if err != nil {
+		return err
+	}
+	defer l.Release()
+	return fn()
+}

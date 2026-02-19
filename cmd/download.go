@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,129 +12,112 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var dlID string
-
-func copyFile(src, dst string) (int64, error) {
-	in, err := os.Open(src)
-	if err != nil {
-		return 0, err
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return 0, err
-	}
-
-	tmp := dst + ".part"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return 0, err
-	}
-
-	n, err := io.Copy(out, in)
-	cerr := out.Close()
-	if err != nil {
-		_ = os.Remove(tmp)
-		return n, err
-	}
-	if cerr != nil {
-		_ = os.Remove(tmp)
-		return n, cerr
-	}
-	return n, os.Rename(tmp, dst)
-}
+var downloadID string
 
 var downloadCmd = &cobra.Command{
-	Use:   "download <url-or-local-zip>",
-	Short: "Download a mod ZIP from a URL, or import a local ZIP into ~/.nmsmods/downloads",
+	Use:   "download <url-or-zip>",
+	Short: "Download a mod ZIP from a URL, or import a local ZIP file into downloads/",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
-		src := args[0]
+		input := args[0]
 
-		// If src is a local file, import it
-		if st, err := os.Stat(src); err == nil && !st.IsDir() {
-			base := filepath.Base(src)
-			if !isZipFile(base) {
-				return fmt.Errorf("local file must be a .zip: %s", src)
-			}
-
-			id := dlID
-			if id == "" {
-				// derive id from filename
-				name := strings.TrimSuffix(base, filepath.Ext(base))
-				id = mods.SlugFromURL(name) // slug helper is URL-based, but fine for plain strings too
-			}
-
-			destAbs := filepath.Join(p.Downloads, base)
-			fmt.Println("ID:", id)
-			fmt.Println("Importing local ZIP to:", destAbs)
-
-			if _, err := copyFile(src, destAbs); err != nil {
-				return err
-			}
-
-			stt, err := app.LoadState(p.State)
+		return withStateLock(p, func() error {
+			st, err := app.LoadState(p.State)
 			if err != nil {
 				return err
 			}
-			relZip := filepath.ToSlash(filepath.Join("downloads", base))
-			entry := stt.Mods[id]
-			entry.URL = "file://" + src
-			entry.ZIP = relZip
-			entry.DownloadedAt = app.NowRFC3339()
-			stt.Mods[id] = entry
 
-			if err := app.SaveState(p.State, stt); err != nil {
+			id := strings.TrimSpace(downloadID)
+			if id == "" {
+				id = mods.SlugFromURL(input)
+			}
+
+			// ensure state map exists
+			if st.Mods == nil {
+				st.Mods = map[string]app.ModEntry{}
+			}
+
+			me := st.Mods[id]
+			if me.DisplayName == "" {
+				me.DisplayName = id
+			}
+
+			// Local ZIP import
+			if fileExists(input) {
+				if !isZipFile(input) {
+					return fmt.Errorf("not a zip file: %s", input)
+				}
+
+				base := filepath.Base(input)
+				dest := filepath.Join(p.Downloads, base)
+
+				// Copy into managed downloads
+				if err := copyFile(input, dest); err != nil {
+					return err
+				}
+
+				me.URL = "file://" + input
+				me.Source = "local"
+				me.ZIP = filepath.ToSlash(filepath.Join("downloads", base))
+				me.DownloadedAt = app.NowRFC3339()
+
+				st.Mods[id] = me
+				if err := app.SaveState(p.State, st); err != nil {
+					return err
+				}
+
+				fmt.Println("Imported to:", dest)
+				return nil
+			}
+
+			// Remote URL download
+			url := input
+			outName := id + ".zip"
+			dest := filepath.Join(p.Downloads, outName)
+
+			fmt.Println("Downloading to:", dest)
+			if err := mods.DownloadURLToFile(url, dest); err != nil {
 				return err
 			}
 
-			fmt.Println("Done.")
+			me.URL = url
+			me.Source = "url"
+			me.ZIP = filepath.ToSlash(filepath.Join("downloads", outName))
+			me.DownloadedAt = app.NowRFC3339()
+
+			st.Mods[id] = me
+			if err := app.SaveState(p.State, st); err != nil {
+				return err
+			}
+
+			fmt.Println("Downloaded:", dest)
 			return nil
-		}
-
-		// Otherwise treat as URL
-		rawURL := src
-
-		id := dlID
-		if id == "" {
-			id = mods.SlugFromURL(rawURL)
-		}
-
-		noQuery := strings.SplitN(rawURL, "?", 2)[0]
-		base := path.Base(noQuery)
-		if !isZipFile(base) {
-			base = base + ".zip"
-		}
-		destAbs := filepath.Join(p.Downloads, base)
-
-		fmt.Println("ID:", id)
-		fmt.Println("Saving to:", destAbs)
-		if _, err := mods.DownloadToFile(rawURL, destAbs); err != nil {
-			return err
-		}
-
-		stt, err := app.LoadState(p.State)
-		if err != nil {
-			return err
-		}
-
-		relZip := filepath.ToSlash(filepath.Join("downloads", base))
-		entry := stt.Mods[id]
-		entry.URL = rawURL
-		entry.ZIP = relZip
-		entry.DownloadedAt = app.NowRFC3339()
-		stt.Mods[id] = entry
-
-		if err := app.SaveState(p.State, stt); err != nil {
-			return err
-		}
-
-		fmt.Println("Done.")
-		return nil
+		})
 	},
 }
 
 func init() {
-	downloadCmd.Flags().StringVar(&dlID, "id", "", "Override mod id (slug)")
+	downloadCmd.Flags().StringVar(&downloadID, "id", "", "Override mod id (slug)")
+}
+
+// copyFile copies src -> dst (overwrites).
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = out.ReadFrom(in)
+	return err
 }
