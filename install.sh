@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
-# install.sh
+# install.sh - installs nmsmods for Linux.
+# Strategy:
+# 1) Prefer GitHub Releases binaries (no Go needed).
+# 2) If that fails, clone repo to temp and build from source (Go needed).
 set -euo pipefail
 
 BIN_NAME="nmsmods"
 DEFAULT_PREFIX="$HOME/.local/bin"
 PREFIX="$DEFAULT_PREFIX"
+
+DEFAULT_REPO="guarinogio/nmsmods"
+
+usage() {
+  cat <<EOF
+Usage: install.sh [--prefix <dir>]
+
+Environment overrides:
+  NMSMODS_REPO   GitHub repo in owner/name form (default: ${DEFAULT_REPO})
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
 
 if [[ "${1:-}" == "--prefix" ]]; then
   PREFIX="${2:-$DEFAULT_PREFIX}"
@@ -24,96 +43,105 @@ detect_arch() {
   esac
 }
 
-detect_repo() {
-  # tries to infer owner/repo from git remote origin
-  local url owner repo
-  url="$(git config --get remote.origin.url 2>/dev/null || true)"
-  if [[ -z "$url" ]]; then
-    echo ""
-    return 0
-  fi
-
-  # handle:
-  #  - https://github.com/owner/repo.git
-  #  - git@github.com:owner/repo.git
-  url="${url%.git}"
-  if [[ "$url" =~ github\.com[:/]+([^/]+)/([^/]+)$ ]]; then
-    owner="${BASH_REMATCH[1]}"
-    repo="${BASH_REMATCH[2]}"
-    echo "${owner}/${repo}"
-    return 0
-  fi
-
-  echo ""
-}
-
-ensure_basic_tools() {
-  if need_cmd curl && need_cmd tar; then
-    return 0
-  fi
-
-  say "Installing base tools (curl, tar) via package manager (best effort)..."
+install_packages() {
+  # $@ = packages to install
   if need_cmd apt-get; then
     sudo apt-get update
-    sudo apt-get install -y ca-certificates curl tar
+    sudo apt-get install -y "$@"
     return 0
   fi
   if need_cmd dnf; then
-    sudo dnf install -y ca-certificates curl tar
+    sudo dnf install -y "$@"
     return 0
   fi
   if need_cmd pacman; then
-    sudo pacman -Syu --noconfirm --needed ca-certificates curl tar
+    sudo pacman -Syu --noconfirm --needed "$@"
     return 0
   fi
   if need_cmd zypper; then
-    sudo zypper --non-interactive in ca-certificates curl tar
+    sudo zypper --non-interactive in "$@"
+    return 0
+  fi
+  return 1
+}
+
+ensure_tools() {
+  # curl, tar, git, jq
+  local missing=()
+
+  need_cmd curl || missing+=("curl")
+  need_cmd tar  || missing+=("tar")
+  need_cmd git  || missing+=("git")
+  need_cmd jq   || missing+=("jq")
+  need_cmd ca-certificates >/dev/null 2>&1 || true
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
     return 0
   fi
 
-  die "Missing curl/tar and no supported package manager found."
+  say "Missing tools: ${missing[*]}"
+  say "Attempting to install missing tools via package manager (best effort)..."
+
+  # map tool->package names (approx; good enough for major distros)
+  # Most distros use same names for curl/tar/git/jq.
+  if ! install_packages ca-certificates curl tar git jq; then
+    die "Could not install required tools automatically. Please install: curl tar git jq"
+  fi
+
+  need_cmd curl || die "curl still missing after install"
+  need_cmd tar  || die "tar still missing after install"
+  need_cmd git  || die "git still missing after install"
+  need_cmd jq   || die "jq still missing after install"
+}
+
+ensure_go() {
+  if need_cmd go; then
+    return 0
+  fi
+  say "Go not found. Attempting to install Go via package manager (best effort)..."
+  if ! install_packages golang-go golang go; then
+    # Not all package managers accept multiple names; try common ones per manager.
+    if need_cmd apt-get; then
+      sudo apt-get update
+      sudo apt-get install -y golang-go
+    elif need_cmd dnf; then
+      sudo dnf install -y golang
+    elif need_cmd pacman; then
+      sudo pacman -Syu --noconfirm --needed go
+    elif need_cmd zypper; then
+      sudo zypper --non-interactive in go
+    else
+      die "No supported package manager found to install Go. Install Go manually and re-run."
+    fi
+  fi
+  need_cmd go || die "Go installation failed."
 }
 
 download_latest_release_bin() {
-  local repo="${1:-}"
+  local repo="${1:?repo required}"
   local arch os api tmpdir tag asset_url
 
   os="linux"
   arch="$(detect_arch)"
-
-  [[ -n "$repo" ]] || return 1
-  need_cmd curl || return 1
-  need_cmd tar || return 1
-
-  # Need jq for reliable GitHub API parsing. If missing, skip and fallback to source build.
-  if ! need_cmd jq; then
-    say "jq not found; skipping release download and falling back to source build."
-    return 1
-  fi
-
   api="https://api.github.com/repos/${repo}/releases/latest"
-  say "Checking latest release: ${repo}"
+
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' RETURN
 
+  say "Checking latest release: ${repo}"
   curl -fsSL "$api" -o "$tmpdir/release.json" || return 1
 
   tag="$(jq -r .tag_name "$tmpdir/release.json")"
-  if [[ -z "$tag" || "$tag" == "null" ]]; then
-    return 1
-  fi
+  [[ -n "$tag" && "$tag" != "null" ]] || return 1
 
-  # We expect archive name template: nmsmods_<version>_linux_<arch>.tar.gz
+  # Match GoReleaser asset name: nmsmods_<version>_linux_<arch>.tar.gz
   asset_url="$(jq -r --arg os "$os" --arg arch "$arch" '
     .assets[]
     | select(.name | test("^nmsmods_.*_" + $os + "_" + $arch + "\\.tar\\.gz$"))
     | .browser_download_url
   ' "$tmpdir/release.json" | head -n 1)"
 
-  if [[ -z "$asset_url" || "$asset_url" == "null" ]]; then
-    say "No matching release asset found for ${os}/${arch}."
-    return 1
-  fi
+  [[ -n "$asset_url" && "$asset_url" != "null" ]] || return 1
 
   say "Downloading release asset: ${asset_url}"
   curl -fsSL "$asset_url" -o "$tmpdir/nmsmods.tar.gz"
@@ -121,87 +149,57 @@ download_latest_release_bin() {
   mkdir -p "$tmpdir/extract"
   tar -C "$tmpdir/extract" -xzf "$tmpdir/nmsmods.tar.gz"
 
-  if [[ ! -f "$tmpdir/extract/${BIN_NAME}" ]]; then
-    # some archives include nested dirs; search for binary
-    local found
-    found="$(find "$tmpdir/extract" -type f -name "${BIN_NAME}" -perm -111 | head -n 1 || true)"
-    [[ -n "$found" ]] || return 1
-    cp "$found" "$tmpdir/extract/${BIN_NAME}"
-  fi
+  # binary might be nested; find it
+  local found
+  found="$(find "$tmpdir/extract" -type f -name "${BIN_NAME}" -perm -111 | head -n 1 || true)"
+  [[ -n "$found" ]] || return 1
 
   mkdir -p "$PREFIX"
-  install -m 0755 "$tmpdir/extract/${BIN_NAME}" "$PREFIX/${BIN_NAME}"
-  say "Installed ${BIN_NAME} ${tag} to ${PREFIX}/${BIN_NAME}"
+  install -m 0755 "$found" "$PREFIX/${BIN_NAME}"
+  say "Installed ${BIN_NAME} (${tag}) to ${PREFIX}/${BIN_NAME}"
   return 0
 }
 
-ensure_go_if_building() {
-  if need_cmd go; then
-    return 0
-  fi
+build_from_source_in_temp() {
+  local repo="${1:?repo required}"
+  local tmpdir
 
-  say "Go not found. Attempting to install Go via package manager (best effort)..."
-  if need_cmd apt-get; then
-    sudo apt-get update
-    sudo apt-get install -y golang-go
-  elif need_cmd dnf; then
-    sudo dnf install -y golang
-  elif need_cmd pacman; then
-    sudo pacman -Syu --noconfirm --needed go
-  elif need_cmd zypper; then
-    sudo zypper --non-interactive in go
-  else
-    die "Go is required to build from source, and no supported package manager found."
-  fi
+  ensure_go
 
-  need_cmd go || die "Go installation failed."
-}
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
 
-build_from_source() {
-  [[ -f "go.mod" ]] || die "Run from repo root (go.mod not found)."
+  say "Cloning repo to temp: ${repo}"
+  git clone --depth 1 "https://github.com/${repo}.git" "$tmpdir/src"
 
-  ensure_go_if_building
+  say "Building from source..."
+  ( cd "$tmpdir/src" && go mod tidy && go test ./... && go build -o "${BIN_NAME}" ./ )
 
-  say "Tidying modules..."
-  go mod tidy
-
-  say "Running tests..."
-  go test ./...
-
-  say "Building ${BIN_NAME}..."
-  go build -o "${BIN_NAME}" ./
-
-  say "Installing to ${PREFIX}..."
   mkdir -p "$PREFIX"
-  install -m 0755 "${BIN_NAME}" "${PREFIX}/${BIN_NAME}"
-
-  say "Installed to ${PREFIX}/${BIN_NAME}"
+  install -m 0755 "$tmpdir/src/${BIN_NAME}" "$PREFIX/${BIN_NAME}"
+  say "Installed ${BIN_NAME} (built from source) to ${PREFIX}/${BIN_NAME}"
 }
 
 main() {
-  ensure_basic_tools
+  ensure_tools
 
-  # Prefer release binary install (no Go required).
-  local repo
-  repo="$(detect_repo)"
+  local repo="${NMSMODS_REPO:-$DEFAULT_REPO}"
 
-  if [[ -n "${NMSMODS_REPO:-}" ]]; then
-    repo="${NMSMODS_REPO}"
-  fi
-
+  # Preferred path: install from latest release
   if download_latest_release_bin "$repo"; then
     echo
     echo "Run:"
-    echo "  ${PREFIX}/${BIN_NAME} doctor"
+    echo "  ${BIN_NAME} doctor"
     exit 0
   fi
 
-  say "Falling back to building from source..."
-  build_from_source
+  # Fallback: build from source in temp clone
+  say "Release install failed (no matching asset or API issue). Falling back to source build..."
+  build_from_source_in_temp "$repo"
 
   echo
   echo "Run:"
-  echo "  ${PREFIX}/${BIN_NAME} doctor"
+  echo "  ${BIN_NAME} doctor"
 }
 
 main "$@"
