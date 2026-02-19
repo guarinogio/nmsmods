@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const CurrentStateVersion = 2
+const CurrentStateVersion = 3
 
 // NexusInfo stores all metadata needed for version tracking and updates.
 type NexusInfo struct {
@@ -27,24 +27,44 @@ type NexusInfo struct {
 	UploadedTime      string `json:"uploaded_time,omitempty"`
 	ModUpdatedTime    string `json:"mod_updated_time,omitempty"`
 
-	// Future support
 	Pinned bool `json:"pinned,omitempty"`
+}
+
+type ProfileInstall struct {
+	Installed bool `json:"installed,omitempty"`
+	Enabled   bool `json:"enabled,omitempty"`
+
+	Folder string `json:"folder,omitempty"` // folder name within game MODS dir
+
+	// Path of stored installation (authoritative) relative to Root (e.g. profiles/default/mods/<folder>)
+	Store string `json:"store,omitempty"`
+
+	// Deployed folder path in the game MODS dir (absolute)
+	DeployedPath string `json:"deployed_path,omitempty"`
+
+	InstalledAt string `json:"installed_at,omitempty"`
 }
 
 type ModEntry struct {
 	URL          string `json:"url,omitempty"`
-	ZIP          string `json:"zip,omitempty"`    // relative to Root (e.g. downloads/foo.zip)
-	Folder       string `json:"folder,omitempty"` // install folder name under GAMEDATA/MODS
-	Installed    bool   `json:"installed,omitempty"`
+	ZIP          string `json:"zip,omitempty"` // relative to Root (e.g. downloads/foo.zip)
 	DownloadedAt string `json:"downloaded_at,omitempty"`
 
-	Source        string     `json:"source,omitempty"` // "local" | "url" | "nexus"
-	DisplayName   string     `json:"display_name,omitempty"`
-	Nexus         *NexusInfo `json:"nexus,omitempty"`
-	InstalledAt   string     `json:"installed_at,omitempty"`
-	InstalledPath string     `json:"installed_path,omitempty"`
-	Health        string     `json:"health,omitempty"` // "ok" | "warning"
-	SHA256        string     `json:"sha256,omitempty"`
+	Source      string     `json:"source,omitempty"` // "local" | "url" | "nexus"
+	DisplayName string     `json:"display_name,omitempty"`
+	Nexus       *NexusInfo `json:"nexus,omitempty"`
+
+	Health string `json:"health,omitempty"` // "ok" | "warning"
+	SHA256 string `json:"sha256,omitempty"`
+
+	// Per-profile install/enabled state.
+	Installations map[string]ProfileInstall `json:"installations,omitempty"`
+
+	// Legacy fields (v2 and earlier). Kept for backwards compatibility/migrations.
+	Folder        string `json:"folder,omitempty"`
+	Installed     bool   `json:"installed,omitempty"`
+	InstalledAt   string `json:"installed_at,omitempty"`
+	InstalledPath string `json:"installed_path,omitempty"`
 }
 
 type State struct {
@@ -81,6 +101,11 @@ func LoadState(path string) (State, error) {
 
 	if st.StateVersion == 1 {
 		st = migrateV1toV2(st)
+		_ = SaveState(path, st)
+	}
+
+	if st.StateVersion == 2 {
+		st = migrateV2toV3(st)
 		_ = SaveState(path, st)
 	}
 
@@ -129,6 +154,30 @@ func migrateV1toV2(st State) State {
 			if me.Nexus.GameDomain == "" {
 				me.Nexus.GameDomain = "nomanssky" // default for now
 			}
+		}
+		st.Mods[id] = me
+	}
+
+	return st
+}
+
+// v3 migration: introduce per-profile installations.
+// Legacy Installed/Folder fields become installations["default"].
+func migrateV2toV3(st State) State {
+	st.StateVersion = 3
+
+	for id, me := range st.Mods {
+		if me.Installations == nil {
+			me.Installations = map[string]ProfileInstall{}
+		}
+		if me.Installed && me.Folder != "" {
+			pi := me.Installations["default"]
+			pi.Installed = true
+			pi.Enabled = true
+			pi.Folder = me.Folder
+			pi.DeployedPath = me.InstalledPath
+			pi.InstalledAt = me.InstalledAt
+			me.Installations["default"] = pi
 		}
 		st.Mods[id] = me
 	}

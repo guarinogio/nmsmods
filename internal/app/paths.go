@@ -9,8 +9,10 @@ type Paths struct {
 	Root      string
 	Downloads string
 	Staging   string
-	Config    string
-	State     string
+	Profiles  string
+
+	Config string
+	State  string
 }
 
 func PathsFromRoot(root string) *Paths {
@@ -18,6 +20,7 @@ func PathsFromRoot(root string) *Paths {
 		Root:      root,
 		Downloads: filepath.Join(root, "downloads"),
 		Staging:   filepath.Join(root, "staging"),
+		Profiles:  filepath.Join(root, "profiles"),
 		Config:    filepath.Join(root, "config.json"),
 		State:     filepath.Join(root, "state.json"),
 	}
@@ -42,6 +45,7 @@ func pathsFromXDG(home string) *Paths {
 		Root:      stateDir,
 		Downloads: filepath.Join(stateDir, "downloads"),
 		Staging:   filepath.Join(stateDir, "staging"),
+		Profiles:  filepath.Join(stateDir, "profiles"),
 		Config:    filepath.Join(configDir, "config.json"),
 		State:     filepath.Join(stateDir, "state.json"),
 	}
@@ -84,6 +88,9 @@ func (p *Paths) Ensure() error {
 		return err
 	}
 	if err := os.MkdirAll(p.Staging, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(p.Profiles, 0o755); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Config), 0o755); err != nil {

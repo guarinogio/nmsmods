@@ -11,8 +11,9 @@ type NexusConfig struct {
 }
 
 type Config struct {
-	GamePath string      `json:"game_path"`
-	Nexus    NexusConfig `json:"nexus,omitempty"`
+	GamePath      string      `json:"game_path"`
+	ActiveProfile string      `json:"active_profile,omitempty"`
+	Nexus         NexusConfig `json:"nexus,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {

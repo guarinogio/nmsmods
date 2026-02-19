@@ -4,306 +4,236 @@ A minimal, fast CLI mod manager for **No Man's Sky (Linux)**.
 
 `nmsmods` helps you:
 
--   Detect your No Man's Sky installation
--   Download mod ZIP files
--   Install mods into `GAMEDATA/MODS`
--   List installed mods
--   Uninstall mods cleanly
--   Track downloaded files
+- Detect your No Man's Sky installation
+- Download mod ZIP files (direct URL, local ZIP, or Nexus)
+- Install mods into an **active profile**
+- Enable/disable mods without deleting them
+- Deploy the active profile into `GAMEDATA/MODS`
+- List installed/deployed mods
+- Uninstall mods cleanly
+- Track downloaded files and installed folders
 
 It is designed to be:
 
--   Simple
--   Transparent
--   Scriptable
--   Extensible (future Nexus Mods integration planned)
+- Simple
+- Transparent
+- Scriptable
+- Safe by default (ZIP hardening + atomic state writes)
 
-------------------------------------------------------------------------
+---
 
 # Important Context (No Man's Sky 5.58+ / 6.x)
 
-No Man's Sky modding changed significantly after 5.50 and again after
-5.58.
+No Man's Sky modding changed significantly after 5.50 and again after 5.58.
 
 Key points:
 
--   Mods must go in:
+- Mods must go in:
 
-    `<GameDir>/GAMEDATA/MODS`
+  `<GameDir>/GAMEDATA/MODS`
 
-    NOT:
+  NOT:
 
-    `PCBANKS/MODS`
+  `PCBANKS/MODS`
 
--   `.EXML` and `.MBIN` files are valid.
-
--   `.MXML` files (except `LocTable.MXML`) are ignored by the game.
-
--   Old PAK-based mods generally do not work anymore.
+- `.EXML` and `.MBIN` files are valid.
+- `.MXML` files (except `LocTable.MXML`) are ignored by the game.
+- Old PAK-based mods generally do not work anymore.
 
 Always ensure the mod you download:
 
--   Is updated for your game version
--   Was updated after January 2025 (for 5.50+ compatibility)
+- Is updated for your game version
+- Was updated after January 2025 (for 5.50+ compatibility)
 
-------------------------------------------------------------------------
+---
 
 # Supported Platforms
 
-Currently supported:
+- Linux (native Steam install)
+- Steam under Proton
 
--   Linux (native Steam install)
--   Steam under Proton
+Architectures:
 
-Supported architectures:
+- amd64 (x86_64)
+- arm64 (aarch64)
 
--   amd64 (x86_64)
--   arm64 (aarch64)
-
-------------------------------------------------------------------------
+---
 
 # Installation
 
-## Recommended (No Go required)
+## Recommended (no Go required)
 
-Install using the official installer:
-
-``` bash
+```bash
 curl -fsSL https://raw.githubusercontent.com/guarinogio/nmsmods/main/install.sh | bash
 ```
 
-This will:
+The installer:
 
-1.  Detect your CPU architecture
-2.  Download the latest GitHub Release binary
-3.  Install it to:
-
-`~/.local/bin/nmsmods`
+1. Detects your CPU architecture
+2. Downloads the latest GitHub Release binary
+3. **Verifies SHA-256** using the release `checksums.txt`
+4. Installs to `~/.local/bin/nmsmods`
 
 Then run:
 
-``` bash
+```bash
 nmsmods doctor
 ```
 
-------------------------------------------------------------------------
-
-## Alternative: Build from Source
+## Build from source
 
 Requirements:
 
--   Go 1.22+
--   Git
+- Go 1.22+
+- Git
 
-Clone and build:
-
-``` bash
+```bash
 git clone https://github.com/guarinogio/nmsmods.git
 cd nmsmods
 make install
 ```
 
-Or manually:
+---
 
-``` bash
-go mod tidy
-go build -o nmsmods ./
-mkdir -p ~/.local/bin
-install -m 0755 nmsmods ~/.local/bin/nmsmods
+# Data layout
+
+`nmsmods` follows XDG by default:
+
+- Config: `~/.config/nmsmods/config.json`
+- State/cache: `~/.local/state/nmsmods/`
+
+Within the state directory:
+
+```
+~/.local/state/nmsmods/
+ ├── state.json
+ ├── downloads/
+ ├── staging/
+ └── profiles/
+     └── default/
+         └── mods/
 ```
 
-------------------------------------------------------------------------
+Each profile has its own **authoritative store** under `profiles/<name>/mods/`.
+When a mod is enabled, it is **deployed** into the game `GAMEDATA/MODS` directory.
 
-# Verifying Installation
+---
 
-Check:
+# Basic usage
 
-``` bash
-which nmsmods
-nmsmods doctor
-```
+## Detect game
 
-`doctor` will show:
-
--   Data directory
--   Downloads directory
--   Staging directory
--   Detected game path
--   Mods directory
--   Installed mods
--   Tracked downloads
-
-------------------------------------------------------------------------
-
-# How It Works
-
-`nmsmods` uses:
-
-`~/.nmsmods/`
-
-Structure:
-
-    ~/.nmsmods/
-     ├── config.json
-     ├── state.json
-     ├── downloads/
-     └── staging/
-
-`state.json` tracks:
-
--   Downloaded ZIP files
--   Whether installed
--   Install folder name
--   Original URL
-
-This ensures:
-
--   Clean uninstall
--   Reproducibility
--   No guessing folder names
-
-------------------------------------------------------------------------
-
-# Basic Usage
-
-## Detect Game
-
-``` bash
+```bash
 nmsmods doctor
 ```
 
 If auto-detection fails:
 
-``` bash
+```bash
 nmsmods set-path "/path/to/No Man's Sky"
 ```
 
-------------------------------------------------------------------------
+## Profiles
 
-## Download a Mod
+Show active profile:
 
-You must provide a direct ZIP URL:
+```bash
+nmsmods profile status
+```
 
-``` bash
+List profiles:
+
+```bash
+nmsmods profile list
+```
+
+Switch profile and deploy it to the game:
+
+```bash
+nmsmods profile use vanilla
+# or re-deploy current profile:
+nmsmods profile deploy
+```
+
+## Download
+
+Direct URL:
+
+```bash
 nmsmods download "https://example.com/mod.zip"
 ```
 
-List downloaded mods:
+Local ZIP:
 
-``` bash
+```bash
+nmsmods download ./SomeMod.zip --id some-mod
+```
+
+List downloads:
+
+```bash
 nmsmods downloads
 ```
 
-------------------------------------------------------------------------
+## Install / enable / disable
 
-## Install a Mod
+Install (stores into active profile + deploys):
 
-Install using numeric index:
-
-``` bash
+```bash
 nmsmods install 1
-```
-
-Or by ID:
-
-``` bash
+# or:
 nmsmods install refinerwikislots
 ```
 
-------------------------------------------------------------------------
+Disable without deleting:
 
-## List Installed Mods
-
-``` bash
-nmsmods installed
+```bash
+nmsmods disable refinerwikislots
 ```
 
-------------------------------------------------------------------------
+Enable again:
 
-## Uninstall
-
-``` bash
-nmsmods uninstall 1
+```bash
+nmsmods enable refinerwikislots
 ```
 
-------------------------------------------------------------------------
+Uninstall (removes from active profile store + undeploys):
 
-## Remove Downloaded ZIP
-
-``` bash
-nmsmods rm-download 1
+```bash
+nmsmods uninstall refinerwikislots
 ```
 
-------------------------------------------------------------------------
+## Shell completion
 
-# Safety Considerations
-
-This tool extracts ZIP files into a staging directory before copying
-them into the game folder.
-
-You should:
-
--   Only download mods from trusted sources
--   Ensure mod version matches your game version
--   Keep backups of save data
-
-Future versions will include:
-
--   Hardened ZIP extraction
--   Path traversal protection
--   File size limits
--   Validation of expected file structure
-
-------------------------------------------------------------------------
-
-# Steam Auto-Detection
-
-On Linux, the tool attempts to detect:
-
-`~/.local/share/Steam/steamapps/common/No Man's Sky`
-
-If you use a custom Steam library path, set it manually:
-
-``` bash
-nmsmods set-path "/your/custom/path"
+```bash
+nmsmods completion bash > /tmp/nmsmods.bash
+nmsmods completion zsh  > /tmp/_nmsmods
 ```
 
-------------------------------------------------------------------------
+---
 
-# Uninstalling nmsmods
+# Nexus Mods (experimental)
 
-If installed via installer:
+The `nexus` command group supports:
 
-``` bash
-rm ~/.local/bin/nmsmods
-```
+- `nmsmods nexus login` (store API key)
+- `nmsmods nexus whoami`
+- `nmsmods nexus mod <modid>` / `nmsmods nexus files <modid>`
+- `nmsmods nexus download-nxm <nxm://...>` and `nmsmods nexus resolve-nxm <nxm://...>`
+- `nmsmods nexus check-updates`
+- `nmsmods nexus pin <id>` (prevent updating)
 
-Your mod state is stored in:
+Note: Nexus API policies and auth requirements can change; treat this as experimental.
 
-`~/.nmsmods`
+---
 
-Delete it if you want to reset everything:
+# Safety considerations
 
-``` bash
-rm -rf ~/.nmsmods
-```
+This tool hardens ZIP extraction against:
 
-------------------------------------------------------------------------
+- Path traversal (`../`)
+- Absolute paths
+- Symlinks
+- Zip bombs (limits configurable via env vars)
 
-# Roadmap
-
-Planned:
-
--   Hardened ZIP extraction (security upgrade)
--   Nexus Mods API integration
--   JSON output mode
--   Mod compatibility checks
--   Mod priority management
--   Update command
--   Signature / checksum verification
-
-------------------------------------------------------------------------
-
-# License
-
-MIT License.
+State writes are atomic (temp file + rename) to reduce corruption risk.

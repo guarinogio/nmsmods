@@ -16,13 +16,17 @@ var dryRunInstall bool
 
 var installCmd = &cobra.Command{
 	Use:   "install <id-or-index>",
-	Short: "Install a downloaded mod into <NMS>/GAMEDATA/MODS (overwrites by default)",
+	Short: "Install a downloaded mod into the active profile, then deploy to <NMS>/GAMEDATA/MODS",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := mustPaths()
 
 		return withStateLock(p, func() error {
-			_, game, err := requireGame(p)
+			cfg, game, err := requireGame(p)
+			if err != nil {
+				return err
+			}
+			profile, err := ensureActiveProfileDirs(p, cfg)
 			if err != nil {
 				return err
 			}
@@ -52,27 +56,34 @@ var installCmd = &cobra.Command{
 				return err
 			}
 
-			// Avoid clobbering another installed mod folder.
-			folder, collided := mods.ResolveFolderCollision(id, folder, st)
-			dest := filepath.Join(game.ModsDir, folder)
+			if me.Installations == nil {
+				me.Installations = map[string]app.ProfileInstall{}
+			}
+			pi := me.Installations[profile]
 
-			_, destErr := os.Stat(dest)
-			destExists := destErr == nil
+			// Avoid clobbering another mod folder within this profile.
+			folder, collided := mods.ResolveFolderCollision(id, folder, profile, st)
+
+			storeDir := app.ProfileModsDir(p, profile)
+			storePath := filepath.Join(storeDir, folder)
+			storeExists := fileExists(storePath)
 
 			if dryRunInstall {
-				fmt.Println("[dry-run] Would install:")
+				fmt.Println("[dry-run] Would install to profile:")
+				fmt.Println("  profile:", profile)
 				fmt.Println("  id:     ", id)
 				fmt.Println("  zip:    ", zipAbs)
 				fmt.Println("  folder: ", folder)
-				fmt.Println("  dest:   ", dest)
+				fmt.Println("  store:  ", storePath)
+				fmt.Println("  deploy: ", filepath.Join(game.ModsDir, folder))
 				if collided {
-					fmt.Println("  note:    collision avoided (another mod uses same folder)")
+					fmt.Println("  note:    collision avoided (another mod uses same folder in this profile)")
 				}
-				if destExists {
+				if storeExists {
 					if noOverwrite {
-						fmt.Println("  action:  SKIP (destination exists and --no-overwrite set)")
+						fmt.Println("  action:  SKIP (store exists and --no-overwrite set)")
 					} else {
-						fmt.Println("  action:  REPLACE (destination exists; overwrite is default)")
+						fmt.Println("  action:  REPLACE (store exists; overwrite is default)")
 					}
 				} else {
 					fmt.Println("  action:  INSTALL")
@@ -80,7 +91,7 @@ var installCmd = &cobra.Command{
 				return nil
 			}
 
-			// Real install path: extract -> choose folder -> copy
+			// Extract -> choose folder -> copy into profile store -> deploy into game MODS
 			stageDir := filepath.Join(p.Staging, id)
 			_ = os.RemoveAll(stageDir)
 			if err := os.MkdirAll(stageDir, 0o755); err != nil {
@@ -97,30 +108,26 @@ var installCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			folder, _ = mods.ResolveFolderCollision(id, folder, st)
-			dest = filepath.Join(game.ModsDir, folder)
+			folder, _ = mods.ResolveFolderCollision(id, folder, profile, st)
 
-			if _, err := os.Stat(dest); err == nil {
+			storePath = filepath.Join(storeDir, folder)
+
+			if fileExists(storePath) {
 				if noOverwrite {
-					return fmt.Errorf("destination exists: %s (run without --no-overwrite to replace it)", dest)
+					return fmt.Errorf("destination exists in profile store: %s (run without --no-overwrite to replace it)", storePath)
 				}
-				fmt.Println("Replacing existing install:", dest)
-				if err := os.RemoveAll(dest); err != nil {
+				fmt.Println("Replacing existing profile install:", storePath)
+				if err := os.RemoveAll(storePath); err != nil {
 					return err
 				}
 			}
 
-			fmt.Println("Installing folder:", folder)
-			if err := mods.CopyDir(srcPath, dest); err != nil {
+			fmt.Println("Installing into profile store:", storePath)
+			if err := mods.CopyDir(srcPath, storePath); err != nil {
 				return err
 			}
 
-			me.Folder = folder
-			me.Installed = true
-			me.InstalledPath = dest
-			me.InstalledAt = app.NowRFC3339()
-
-			ok, verr := mods.HasRelevantFiles(dest)
+			ok, verr := mods.HasRelevantFiles(storePath)
 			if verr != nil || !ok {
 				fmt.Println("Warning: installed folder contains no .EXML/.MBIN files (or health check failed)")
 				me.Health = "warning"
@@ -128,21 +135,43 @@ var installCmd = &cobra.Command{
 				me.Health = "ok"
 			}
 
+			// Enabled by default: deploy to game
+			deployed, err := mods.Deploy(storePath, game.ModsDir, folder)
+			if err != nil {
+				return err
+			}
+
+			pi.Installed = true
+			pi.Enabled = true
+			pi.Folder = folder
+			pi.Store = filepath.ToSlash(filepath.Join("profiles", profile, "mods", folder))
+			pi.DeployedPath = deployed
+			pi.InstalledAt = app.NowRFC3339()
+			me.Installations[profile] = pi
+
+			// Keep legacy fields in sync for users that rely on them (best effort).
+			me.Folder = folder
+			me.Installed = true
+			me.InstalledPath = deployed
+			me.InstalledAt = pi.InstalledAt
+
 			if me.DisplayName == "" {
 				me.DisplayName = id
 			}
+
 			st.Mods[id] = me
 			if err := app.SaveState(p.State, st); err != nil {
 				return err
 			}
 
-			fmt.Println("Installed to:", dest)
+			fmt.Println("Installed in profile:", profile)
+			fmt.Println("Deployed to:", deployed)
 			return nil
 		})
 	},
 }
 
 func init() {
-	installCmd.Flags().BoolVar(&noOverwrite, "no-overwrite", false, "Do not overwrite if destination folder already exists")
+	installCmd.Flags().BoolVar(&noOverwrite, "no-overwrite", false, "Do not overwrite if destination already exists in the profile store")
 	installCmd.Flags().BoolVar(&dryRunInstall, "dry-run", false, "Print what would happen without making changes")
 }

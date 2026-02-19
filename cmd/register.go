@@ -18,6 +18,10 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(installCmd)
 	root.AddCommand(installDirCmd)
 	root.AddCommand(reinstallCmd)
+	root.AddCommand(enableCmd)
+	root.AddCommand(disableCmd)
+	root.AddCommand(profileCmd)
+	root.AddCommand(completionCmd)
 
 	root.AddCommand(installedCmd)
 	root.AddCommand(uninstallCmd)

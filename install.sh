@@ -119,7 +119,7 @@ ensure_go() {
 
 download_latest_release_bin() {
   local repo="${1:?repo required}"
-  local arch os api tmpdir tag asset_url
+  local arch os api tmpdir tag asset_url asset_name checksums_url
 
   os="linux"
   arch="$(detect_arch)"
@@ -135,19 +135,48 @@ download_latest_release_bin() {
   [[ -n "$tag" && "$tag" != "null" ]] || return 1
 
   # Match GoReleaser asset name: nmsmods_<version>_linux_<arch>.tar.gz
-  asset_url="$(jq -r --arg os "$os" --arg arch "$arch" '
+  asset_name="$(jq -r --arg os "$os" --arg arch "$arch" '
     .assets[]
     | select(.name | test("^nmsmods_.*_" + $os + "_" + $arch + "\\.tar\\.gz$"))
+    | .name
+  ' "$tmpdir/release.json" | head -n 1)"
+
+  asset_url="$(jq -r --arg name "$asset_name" '
+    .assets[]
+    | select(.name == $name)
     | .browser_download_url
   ' "$tmpdir/release.json" | head -n 1)"
 
+  [[ -n "$asset_name" && "$asset_name" != "null" ]] || return 1
   [[ -n "$asset_url" && "$asset_url" != "null" ]] || return 1
 
+  checksums_url="$(jq -r '
+    .assets[]
+    | select(.name == "checksums.txt")
+    | .browser_download_url
+  ' "$tmpdir/release.json" | head -n 1)"
+
+  [[ -n "$checksums_url" && "$checksums_url" != "null" ]] || return 1
+
   say "Downloading release asset: ${asset_url}"
-  curl -fsSL "$asset_url" -o "$tmpdir/nmsmods.tar.gz"
+  curl -fsSL "$asset_url" -o "$tmpdir/$asset_name"
+
+  say "Downloading checksums: ${checksums_url}"
+  curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
+
+  # Verify sha256 from checksums.txt
+  local expected actual
+  expected="$(grep -E "  ${asset_name}$" "$tmpdir/checksums.txt" | awk '{print $1}' | head -n 1)"
+  [[ -n "$expected" ]] || die "Could not find ${asset_name} in checksums.txt"
+
+  actual="$(sha256sum "$tmpdir/$asset_name" | awk '{print $1}')"
+  if [[ "$expected" != "$actual" ]]; then
+    die "Checksum mismatch for ${asset_name} (expected $expected, got $actual)"
+  fi
+  say "Checksum verified: ${asset_name}"
 
   mkdir -p "$tmpdir/extract"
-  tar -C "$tmpdir/extract" -xzf "$tmpdir/nmsmods.tar.gz"
+  tar -C "$tmpdir/extract" -xzf "$tmpdir/$asset_name"
 
   # binary might be nested; find it
   local found
@@ -159,6 +188,7 @@ download_latest_release_bin() {
   say "Installed ${BIN_NAME} (${tag}) to ${PREFIX}/${BIN_NAME}"
   return 0
 }
+
 
 build_from_source_in_temp() {
   local repo="${1:?repo required}"

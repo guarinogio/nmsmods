@@ -51,6 +51,17 @@ func requireGame(p *app.Paths) (*app.Config, *nms.Game, error) {
 	return &cfg, game, nil
 }
 
+func activeProfile(cfg *app.Config) string {
+	return app.ActiveProfile(*cfg)
+}
+
+func ensureActiveProfileDirs(p *app.Paths, cfg *app.Config) (string, error) {
+	prof := activeProfile(cfg)
+	if err := app.EnsureProfileDirs(p, prof); err != nil {
+		return "", err
+	}
+	return prof, nil
+}
 func isZipFile(name string) bool {
 	l := strings.ToLower(name)
 	return strings.HasSuffix(l, ".zip")
