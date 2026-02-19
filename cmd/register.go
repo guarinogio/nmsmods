@@ -1,0 +1,17 @@
+// cmd/register.go
+package cmd
+
+import "github.com/spf13/cobra"
+
+// registerCommands centralizes wiring so root.go never drifts from actual cmd files.
+func registerCommands(root *cobra.Command) {
+	root.AddCommand(whereCmd)
+	root.AddCommand(setPathCmd)
+	root.AddCommand(doctorCmd)
+	root.AddCommand(downloadCmd)
+	root.AddCommand(downloadsCmd)
+	root.AddCommand(installCmd)
+	root.AddCommand(installedCmd)
+	root.AddCommand(uninstallCmd)
+	root.AddCommand(rmDownloadCmd)
+}

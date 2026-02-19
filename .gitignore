@@ -1,0 +1,13 @@
+# binaries
+nmsmods
+
+# local state
+.nmsmods/
+*.part
+
+# go
+/vendor/
+*.exe
+*.test
+*.out
+go.work
