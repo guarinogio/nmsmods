@@ -100,6 +100,16 @@ func sanitizeZipName(name string) (string, error) {
 		return "", fmt.Errorf("path traversal not allowed: %s", name)
 	}
 
+		for _, r := range rel {
+		if r < 32 {
+			return "", fmt.Errorf("invalid control character in path")
+		}
+	}
+	
+	if strings.Contains(rel, ":") {
+		return "", fmt.Errorf("invalid character ':' in path")
+	}
+
 	return rel, nil
 }
 

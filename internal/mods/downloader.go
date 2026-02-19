@@ -1,6 +1,8 @@
 package mods
 
 import (
+	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,26 +11,39 @@ import (
 	"time"
 )
 
-// DownloadURLToFile downloads a remote URL into a local file path.
-// It writes to dest + ".part" first, then renames atomically.
+const defaultMaxDownloadBytes = int64(20) * 1024 * 1024 * 1024 // 20GB
+
+func maxDownloadBytes() int64 {
+	return defaultMaxDownloadBytes
+}
+
 func DownloadURLToFile(url, dest string) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		err := downloadOnce(url, dest)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(time.Duration(attempt) * time.Second)
+	}
+	return fmt.Errorf("download failed after retries: %w", lastErr)
+}
+
+func downloadOnce(url, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
 
 	tmp := dest + ".part"
-
 	out, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	client := &http.Client{
-		Timeout: 0, // allow large downloads (no fixed timeout)
-	}
-
-	resp, err := client.Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
@@ -38,23 +53,27 @@ func DownloadURLToFile(url, dest string) error {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
 
-	// Stream copy
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	if resp.ContentLength > 0 && resp.ContentLength > maxDownloadBytes() {
+		return fmt.Errorf("download too large: %d bytes", resp.ContentLength)
+	}
+
+	written, err := io.Copy(out, io.LimitReader(resp.Body, maxDownloadBytes()+1))
+	if err != nil {
+		return err
+	}
+	if written > maxDownloadBytes() {
+		return errors.New("download exceeded max allowed size")
+	}
+
+	if err := out.Close(); err != nil {
 		return err
 	}
 
-	if err := out.Sync(); err != nil {
-		return err
+	// Validate it's actually a zip
+	if _, err := zip.OpenReader(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("downloaded file is not a valid zip")
 	}
 
-	// Rename atomically
-	if err := os.Rename(tmp, dest); err != nil {
-		return err
-	}
-
-	// Update mod time to now
-	now := time.Now()
-	_ = os.Chtimes(dest, now, now)
-
-	return nil
+	return os.Rename(tmp, dest)
 }
