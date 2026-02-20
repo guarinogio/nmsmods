@@ -52,7 +52,7 @@ nfpms:
       - deb
     bindir: /usr/bin
 
-    depends:
+    dependencies:
       - xdg-utils
 
     contents:
@@ -79,7 +79,6 @@ nfpms:
     scripts:
       postinstall: packaging/deb/postinstall.sh
       preremove: packaging/deb/preremove.sh
-
 release:
   draft: false
   prerelease: false
