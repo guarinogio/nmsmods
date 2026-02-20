@@ -1,9 +1,10 @@
 package mods
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,14 +63,27 @@ func writeManagedMarker(dest, modID, profile string) error {
 	return os.WriteFile(filepath.Join(dest, managedMarkerFile), b, 0o644)
 }
 
-func randSuffix() string {
-	rand.Seed(time.Now().UnixNano())
-	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
+func uniqueSuffix() string {
 	b := make([]byte, 8)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+	if _, err := rand.Read(b); err != nil {
+		// fallback: time-based hex
+		n := time.Now().UnixNano()
+		return fmt.Sprintf("%x", n)
 	}
-	return string(b)
+	return hex.EncodeToString(b)
+}
+
+// uniquePath returns a non-existent path under dir with a given prefix.
+// It uses CreateTemp to avoid collisions, then removes the file and returns the path.
+func uniquePath(dir, prefix string) (string, error) {
+	f, err := os.CreateTemp(dir, prefix)
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return name, nil
 }
 
 // Deploy copies a stored mod folder into the game's MODS directory.
@@ -107,7 +121,10 @@ func Deploy(storePath string, gameModsDir string, folder string, modID string, p
 	}
 
 	// Stage into a temp dir inside MODS for atomic rename.
-	stage := filepath.Join(gameModsDir, "."+folder+".nmsmods.tmp-"+randSuffix())
+	stage, err := os.MkdirTemp(gameModsDir, "."+folder+".nmsmods.tmp-")
+	if err != nil {
+		return "", err
+	}
 	_ = os.RemoveAll(stage)
 	if err := CopyDir(storePath, stage); err != nil {
 		_ = os.RemoveAll(stage)
@@ -121,7 +138,11 @@ func Deploy(storePath string, gameModsDir string, folder string, modID string, p
 	// Swap stage into place.
 	backup := ""
 	if _, err := os.Stat(dest); err == nil {
-		backup = filepath.Join(gameModsDir, "."+folder+".nmsmods.bak-"+randSuffix())
+		backup, err = uniquePath(gameModsDir, "."+folder+".nmsmods.bak-")
+		if err != nil {
+			_ = os.RemoveAll(stage)
+			return "", err
+		}
 		_ = os.RemoveAll(backup)
 		if err := os.Rename(dest, backup); err != nil {
 			_ = os.RemoveAll(stage)

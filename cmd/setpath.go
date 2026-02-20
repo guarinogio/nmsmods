@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,7 +61,7 @@ var setPathCmd = &cobra.Command{
 				for _, v := range uniq {
 					msg += " - " + v + "\n"
 				}
-				return fmt.Errorf(strings.TrimSpace(msg))
+				return errors.New(strings.TrimSpace(msg))
 			}
 			newPath = uniq[0]
 		}

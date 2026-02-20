@@ -2,7 +2,6 @@ package steam
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,9 +148,4 @@ func isNumericKey(k string) bool {
 		}
 	}
 	return true
-}
-
-func debugf(_ string, _ ...any) {
-	// Reserved for future debug logging without importing fmt everywhere.
-	_ = fmt.Sprintf
 }
