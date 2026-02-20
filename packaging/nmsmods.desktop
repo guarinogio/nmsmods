@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=nmsmods
+Comment=No Man's Sky Mod Manager
+Type=Application
+Exec=/usr/bin/nmsmods nxm handle %u
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/nxm;
+Categories=Utility;
