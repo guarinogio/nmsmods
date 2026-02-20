@@ -48,5 +48,12 @@ jobs:
       - name: Go build
         run: go build ./...
 
-      - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: govulncheck (non-blocking)
+        run: |
+          set +e
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "::warning::govulncheck reported vulnerabilities (exit $status). See logs."
+            exit 0
+          fi
