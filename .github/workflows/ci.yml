@@ -15,11 +15,13 @@ concurrency:
 jobs:
   ci:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -39,10 +41,12 @@ jobs:
       - name: Staticcheck
         uses: dominikh/staticcheck-action@v1
         with:
-          version: "latest"
+          version: latest
+          install-go: false
+          cache-key: ${{ steps.go.outputs.go-version }}
 
       - name: Go build
-        run: go build -buildvcs=false ./...
+        run: go build ./...
 
       - name: govulncheck
         uses: golang/govulncheck-action@v1
