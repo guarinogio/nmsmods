@@ -1,3 +1,47 @@
+version: 2
+
+project_name: nmsmods
+
+before:
+  hooks:
+    - go mod tidy
+    - mkdir -p completions
+    - sh -c "go run . completion bash > completions/nmsmods.bash"
+    - sh -c "go run . completion zsh  > completions/_nmsmods"
+    - sh -c "go run . completion fish > completions/nmsmods.fish"
+
+builds:
+  - id: nmsmods
+    main: .
+    binary: nmsmods
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w -X nmsmods/internal/app.Version={{.Version}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - completions/*
+
+checksum:
+  name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+
 nfpms:
   - id: packages
     package_name: nmsmods
@@ -12,25 +56,21 @@ nfpms:
       - xdg-utils
 
     contents:
-      # Desktop entry for nxm:// handler
       - src: packaging/nmsmods.desktop
         dst: /usr/share/applications/nmsmods.desktop
         file_info:
           mode: 0644
 
-      # Bash completion
       - src: completions/nmsmods.bash
         dst: /usr/share/bash-completion/completions/nmsmods
         file_info:
           mode: 0644
 
-      # Zsh completion
       - src: completions/_nmsmods
         dst: /usr/share/zsh/site-functions/_nmsmods
         file_info:
           mode: 0644
 
-      # Fish completion
       - src: completions/nmsmods.fish
         dst: /usr/share/fish/vendor_completions.d/nmsmods.fish
         file_info:
@@ -39,3 +79,7 @@ nfpms:
     scripts:
       postinstall: packaging/deb/postinstall.sh
       preremove: packaging/deb/preremove.sh
+
+release:
+  draft: false
+  prerelease: false
