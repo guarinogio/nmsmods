@@ -1,8 +1,6 @@
 package mods
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -61,16 +59,6 @@ func writeManagedMarker(dest, modID, profile string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dest, managedMarkerFile), b, 0o644)
-}
-
-func uniqueSuffix() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		// fallback: time-based hex
-		n := time.Now().UnixNano()
-		return fmt.Sprintf("%x", n)
-	}
-	return hex.EncodeToString(b)
 }
 
 // uniquePath returns a non-existent path under dir with a given prefix.
