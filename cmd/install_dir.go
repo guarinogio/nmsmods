@@ -100,7 +100,7 @@ var installDirCmd = &cobra.Command{
 				return err
 			}
 
-			deployed, err := mods.Deploy(storePath, game.ModsDir, folder)
+			deployed, err := mods.Deploy(storePath, game.ModsDir, folder, id, profile)
 			if err != nil {
 				return err
 			}

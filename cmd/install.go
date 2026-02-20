@@ -136,7 +136,7 @@ var installCmd = &cobra.Command{
 			}
 
 			// Enabled by default: deploy to game
-			deployed, err := mods.Deploy(storePath, game.ModsDir, folder)
+			deployed, err := mods.Deploy(storePath, game.ModsDir, folder, id, profile)
 			if err != nil {
 				return err
 			}

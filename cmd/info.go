@@ -25,13 +25,13 @@ type infoOut struct {
 	DownloadedAt string `json:"downloaded_at,omitempty"`
 
 	// Newer state fields
-	Source        string        `json:"source,omitempty"` // local|url|nexus
-	DisplayName   string        `json:"display_name,omitempty"`
+	Source        string         `json:"source,omitempty"` // local|url|nexus
+	DisplayName   string         `json:"display_name,omitempty"`
 	Nexus         *app.NexusInfo `json:"nexus,omitempty"`
-	InstalledAt   string        `json:"installed_at,omitempty"`
-	InstalledPath string        `json:"installed_path,omitempty"`
-	Health        string        `json:"health,omitempty"` // ok|warning
-	SHA256        string        `json:"sha256,omitempty"`
+	InstalledAt   string         `json:"installed_at,omitempty"`
+	InstalledPath string         `json:"installed_path,omitempty"`
+	Health        string         `json:"health,omitempty"` // ok|warning
+	SHA256        string         `json:"sha256,omitempty"`
 
 	// Convenience: relative zip path as stored in state (debugging)
 	ZipRel string `json:"zip_rel,omitempty"`

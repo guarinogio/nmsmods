@@ -157,7 +157,8 @@ func (c *Client) ListFiles(ctx context.Context, gameDomain string, modID int) ([
 // GetDownloadLinks resolves download links for a specific file.
 //
 // Endpoint:
-//   GET /v1/games/{game}/mods/{mod_id}/files/{file_id}/download_link.json?key=...&expires=...&user_id=...
+//
+//	GET /v1/games/{game}/mods/{mod_id}/files/{file_id}/download_link.json?key=...&expires=...&user_id=...
 func (c *Client) GetDownloadLinks(ctx context.Context, gameDomain string, modID, fileID int, key, expires, userID string) ([]DownloadLink, error) {
 	base := fmt.Sprintf("%s/games/%s/mods/%d/files/%d/download_link.json", c.baseURL, url.PathEscape(gameDomain), modID, fileID)
 

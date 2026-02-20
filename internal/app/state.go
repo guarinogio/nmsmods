@@ -204,7 +204,8 @@ func SaveState(path string, st State) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// State may contain URLs and Nexus metadata; keep it user-private by default.
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

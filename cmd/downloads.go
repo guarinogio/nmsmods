@@ -67,12 +67,12 @@ var downloadsCmd = &cobra.Command{
 					zipAbs = filepath.Join(p.Root, filepath.FromSlash(me.ZIP))
 				}
 				out = append(out, downloadRow{
-					Index:       i + 1,
-					ID:          id,
-					Installed:   me.Installed,
-					ZipPath:     zipAbs,
-					URL:         me.URL,
-					Folder:      me.Folder,
+					Index:        i + 1,
+					ID:           id,
+					Installed:    me.Installed,
+					ZipPath:      zipAbs,
+					URL:          me.URL,
+					Folder:       me.Folder,
 					DownloadedAt: me.DownloadedAt,
 
 					Source:        me.Source,

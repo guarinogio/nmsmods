@@ -47,7 +47,9 @@ var disableCmd = &cobra.Command{
 				return nil
 			}
 
-			_ = mods.Undeploy(game.ModsDir, pi.Folder)
+			if err := mods.Undeploy(game.ModsDir, pi.Folder, id, profile); err != nil {
+				return err
+			}
 			pi.Enabled = false
 			pi.DeployedPath = ""
 			me.Installations[profile] = pi

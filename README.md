@@ -62,12 +62,13 @@ The installer:
 2. Downloads the latest GitHub Release binary
 3. Verifies SHA-256 using the release `checksums.txt`
 4. Installs to `~/.local/bin/nmsmods`
+5. Registers `nxm://` as an OS URL handler (so "Mod Manager Download" opens `nmsmods`)
+6. Ensures `~/.local/bin` is added to `PATH` for future shells (via `~/.profile`, if needed)
 
-Then:
+After install, open a **new terminal** (or log out/in) so `PATH` changes take effect.
 
-```bash
-nmsmods doctor
-```
+If you still get `command not found: nmsmods`, ensure `~/.local/bin` is in your `PATH`.
+The installer adds a portable snippet to `~/.profile`, but some environments may require manual setup.
 
 ### Build from source
 
@@ -80,6 +81,8 @@ Requirements:
 git clone https://github.com/guarinogio/nmsmods.git
 cd nmsmods
 make install
+
+# installs the nxm:// handler and prints a PATH hint if needed
 ```
 
 ---
@@ -106,6 +109,22 @@ State directory structure:
 Each profile has its own authoritative store under `profiles/<name>/mods/`.
 When a mod is enabled, it is deployed into the game `GAMEDATA/MODS` directory.
 
+### Managed deploy marker + overwrite policy
+
+When `nmsmods` deploys a mod into `GAMEDATA/MODS/<folder>`, it also writes a small marker file:
+
+- `GAMEDATA/MODS/<folder>/.nmsmods.managed.json`
+
+This is used for safety:
+
+- `nmsmods` **refuses to overwrite** an existing `GAMEDATA/MODS/<folder>` that is not marked as managed.
+- `nmsmods` only **undeploys** folders that are managed *and* match the expected mod/profile.
+
+If you have manually-installed mods that conflict with a folder name `nmsmods` wants to use, you can:
+
+- rename/remove the conflicting folder in `GAMEDATA/MODS`, or
+- install the mod under a different profile/id so the folder name changes.
+
 To override the state directory:
 
 ```bash
@@ -116,17 +135,63 @@ export NMSMODS_HOME=/path/to/isolated/home
 
 ## Basic usage
 
+## Quickstart (one-click Nexus installs)
+
+1) Auto-detect and set the game path:
+
+```bash
+nmsmods set-path --auto
+```
+
+If you have multiple installs, `--auto` will refuse and print the candidates.
+
+2) Log in to Nexus (stores your API key under XDG config):
+
+```bash
+nmsmods nexus login --api-key "YOUR_KEY"
+```
+
+3) Go to a mod page on Nexus and click **Mod Manager Download**.
+
+Because `install.sh` (and `make install`) registers the `nxm://` handler, your system will open:
+
+```bash
+nmsmods nxm handle "nxm://..."
+```
+
+Behavior:
+
+- If the mod is not installed in the active profile: **download → install → enable → deploy**
+- If the same Nexus file is already installed: **no-op** (ensures it is deployed/enabled)
+- If a different Nexus file is clicked for the same mod: **download → update (reinstall) → deploy**
+
+The handler also writes a log at:
+
+- `~/.local/state/nmsmods/nxm-handler.log`
+
+And (if `notify-send` is available) shows a desktop notification.
+
 ### Detect game
 
 ```bash
 nmsmods doctor
 ```
 
+`doctor` also shows what is currently inside your real `GAMEDATA/MODS` directory and splits it into:
+
+- **managed by nmsmods** (folders containing `.nmsmods.managed.json`)
+- **external/unmanaged** (folders created manually or by other tools)
+
 If auto-detection fails:
 
 ```bash
+nmsmods set-path --auto
+# or:
 nmsmods set-path "/path/to/No Man's Sky"
 ```
+
+`set-path` stores the **canonicalized** path (after resolving symlinks). If your input path is a symlinked Steam path,
+the saved path may differ (this prevents duplicate entries for the same installation).
 
 ### Profiles
 

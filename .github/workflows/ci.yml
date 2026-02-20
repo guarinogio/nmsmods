@@ -8,8 +8,12 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,14 +26,23 @@ jobs:
           cache: true
 
       - name: Go fmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: Go mod tidy check
         run: |
-          test -z "$(gofmt -l .)"
+          go mod tidy
+          git diff --exit-code
 
       - name: Go vet
         run: go vet ./...
 
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+
       - name: Go build
-        run: go build ./...
+        run: go build -buildvcs=false ./...
 
       - name: govulncheck
         uses: golang/govulncheck-action@v1

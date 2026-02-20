@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"nmsmods/internal/app"
+	"nmsmods/internal/mods"
 	"nmsmods/internal/nms"
 
 	"github.com/spf13/cobra"
@@ -24,6 +26,8 @@ type doctorReport struct {
 	ModsDir             string   `json:"mods_dir,omitempty"`
 	DetectedGamePaths   []string `json:"detected_game_paths,omitempty"`
 	InstalledModFolders []string `json:"installed_mod_folders,omitempty"`
+	ManagedModFolders   []string `json:"managed_mod_folders,omitempty"`
+	ExternalModFolders  []string `json:"external_mod_folders,omitempty"`
 	TrackedDownloads    int      `json:"tracked_downloads"`
 	Issues              []string `json:"issues,omitempty"`
 }
@@ -44,6 +48,20 @@ func listInstalledFolders(modsDir string) ([]string, error) {
 	}
 	sort.Strings(folders)
 	return folders, nil
+}
+
+func splitManagedFolders(modsDir string, folders []string) (managed []string, external []string) {
+	for _, f := range folders {
+		p := filepath.Join(modsDir, f)
+		if _, err := mods.ReadManagedMarker(p); err == nil {
+			managed = append(managed, f)
+		} else {
+			external = append(external, f)
+		}
+	}
+	sort.Strings(managed)
+	sort.Strings(external)
+	return managed, external
 }
 
 var doctorCmd = &cobra.Command{
@@ -116,6 +134,7 @@ var doctorCmd = &cobra.Command{
 							rep.Issues = append(rep.Issues, fmt.Sprintf("failed to list installed mods: %v", ferr))
 						} else {
 							rep.InstalledModFolders = folders
+							rep.ManagedModFolders, rep.ExternalModFolders = splitManagedFolders(game.ModsDir, folders)
 						}
 					}
 				}
@@ -148,8 +167,17 @@ var doctorCmd = &cobra.Command{
 				fmt.Println("Tracked downloads:", rep.TrackedDownloads)
 				if len(rep.InstalledModFolders) > 0 {
 					fmt.Println("Installed mod folders:", len(rep.InstalledModFolders))
-					for _, f := range rep.InstalledModFolders {
-						fmt.Println(" -", f)
+					if len(rep.ManagedModFolders) > 0 {
+						fmt.Println(" - managed by nmsmods:", len(rep.ManagedModFolders))
+						for _, f := range rep.ManagedModFolders {
+							fmt.Println("   -", f)
+						}
+					}
+					if len(rep.ExternalModFolders) > 0 {
+						fmt.Println(" - external/unmanaged:", len(rep.ExternalModFolders))
+						for _, f := range rep.ExternalModFolders {
+							fmt.Println("   -", f)
+						}
 					}
 				}
 				if len(rep.Issues) > 0 {

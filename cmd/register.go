@@ -32,4 +32,7 @@ func registerCommands(root *cobra.Command) {
 
 	// Phase 1: Nexus API group
 	root.AddCommand(nexusCmd)
+
+	// Nexus Mod Manager (nxm://) one-click handler
+	root.AddCommand(nxmCmd)
 }

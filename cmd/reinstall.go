@@ -118,7 +118,7 @@ var reinstallCmd = &cobra.Command{
 			pi.InstalledAt = app.NowRFC3339()
 
 			if enabled {
-				deployed, err := mods.Deploy(storeAbs, game.ModsDir, folder)
+				deployed, err := mods.Deploy(storeAbs, game.ModsDir, folder, id, profile)
 				if err != nil {
 					return err
 				}

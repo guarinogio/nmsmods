@@ -29,6 +29,10 @@ func ValidateGamePath(gamePath string) (*Game, error) {
 	}
 
 	root := filepath.Clean(gamePath)
+	// Canonicalize symlinks where possible so we operate on a stable path.
+	if rp, err := filepath.EvalSymlinks(root); err == nil {
+		root = filepath.Clean(rp)
+	}
 
 	st, err := os.Stat(root)
 	if err != nil {

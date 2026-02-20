@@ -73,6 +73,7 @@ ensure_tools() {
   need_cmd tar  || missing+=("tar")
   need_cmd git  || missing+=("git")
   need_cmd jq   || missing+=("jq")
+  need_cmd xdg-mime || missing+=("xdg-mime")
   need_cmd ca-certificates >/dev/null 2>&1 || true
 
   if [[ ${#missing[@]} -eq 0 ]]; then
@@ -83,15 +84,16 @@ ensure_tools() {
   say "Attempting to install missing tools via package manager (best effort)..."
 
   # map tool->package names (approx; good enough for major distros)
-  # Most distros use same names for curl/tar/git/jq.
-  if ! install_packages ca-certificates curl tar git jq; then
-    die "Could not install required tools automatically. Please install: curl tar git jq"
+  # Most distros use same names for curl/tar/git/jq/xdg-utils.
+  if ! install_packages ca-certificates curl tar git jq xdg-utils; then
+    die "Could not install required tools automatically. Please install: curl tar git jq xdg-utils"
   fi
 
   need_cmd curl || die "curl still missing after install"
   need_cmd tar  || die "tar still missing after install"
   need_cmd git  || die "git still missing after install"
   need_cmd jq   || die "jq still missing after install"
+  need_cmd xdg-mime || die "xdg-mime still missing after install (install xdg-utils)"
 }
 
 ensure_go() {
@@ -203,11 +205,68 @@ build_from_source_in_temp() {
   git clone --depth 1 "https://github.com/${repo}.git" "$tmpdir/src"
 
   say "Building from source..."
-  ( cd "$tmpdir/src" && go mod tidy && go test ./... && go build -o "${BIN_NAME}" ./ )
+  ( cd "$tmpdir/src" && go mod tidy && go build -o "${BIN_NAME}" ./ )
 
   mkdir -p "$PREFIX"
   install -m 0755 "$tmpdir/src/${BIN_NAME}" "$PREFIX/${BIN_NAME}"
   say "Installed ${BIN_NAME} (built from source) to ${PREFIX}/${BIN_NAME}"
+}
+
+ensure_path_in_profile() {
+  # Ensure PREFIX is in PATH for future shells, in a shell-agnostic way.
+  # We avoid guessing bash/zsh/fish here; ~/.profile is the portable login shell entrypoint.
+  local prof="$HOME/.profile"
+  local snippet_begin="# nmsmods: ensure user-local bin dir is in PATH"
+  local snippet_end="# end nmsmods"
+  local line="export PATH=\"$PREFIX:\$PATH\""
+
+  # Only apply when installing to a user prefix under $HOME.
+  case "$PREFIX" in
+    "$HOME"/*) ;;
+    *) return 0 ;;
+  esac
+
+  # If already in PATH now, don't force changes (but still OK to add for future shells).
+  if echo ":$PATH:" | grep -q ":$PREFIX:"; then
+    return 0
+  fi
+
+  say "Adding $PREFIX to PATH in $prof (portable)"
+  touch "$prof"
+  if grep -q "$snippet_begin" "$prof" 2>/dev/null; then
+    return 0
+  fi
+
+  {
+    echo
+    echo "$snippet_begin"
+    echo "if [ -d \"$PREFIX\" ] && ! echo \"\$PATH\" | grep -q \"$PREFIX\" ; then"
+    echo "  $line"
+    echo "fi"
+    echo "$snippet_end"
+  } >> "$prof"
+}
+
+register_nxm_handler() {
+  local bin_path="$PREFIX/$BIN_NAME"
+  local desktop_dir="$HOME/.local/share/applications"
+  local desktop_file="$desktop_dir/nmsmods.desktop"
+
+  mkdir -p "$desktop_dir"
+
+  cat > "$desktop_file" <<EOF
+[Desktop Entry]
+Type=Application
+Name=nmsmods
+Exec=${bin_path} nxm handle %u
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/nxm;
+Categories=Game;
+EOF
+
+  say "Registering nxm:// handler (x-scheme-handler/nxm)"
+  xdg-mime default nmsmods.desktop x-scheme-handler/nxm || true
 }
 
 main() {
@@ -217,9 +276,15 @@ main() {
 
   # Preferred path: install from latest release
   if download_latest_release_bin "$repo"; then
+    register_nxm_handler
+    ensure_path_in_profile
+
     echo
-    echo "Run:"
-    echo "  ${BIN_NAME} doctor"
+    echo "Next steps:"
+    echo "  1) Open a new terminal (or log out/in) so PATH updates take effect"
+    echo "  2) Run: nmsmods set-path --auto   (or set-path <path>)"
+    echo "  3) Run: nmsmods nexus login --api-key <key>"
+    echo "  4) In Nexus, click 'Mod Manager Download' to auto-install"
     exit 0
   fi
 
@@ -227,9 +292,15 @@ main() {
   say "Release install failed (no matching asset or API issue). Falling back to source build..."
   build_from_source_in_temp "$repo"
 
+  register_nxm_handler
+  ensure_path_in_profile
+
   echo
-  echo "Run:"
-  echo "  ${BIN_NAME} doctor"
+  echo "Next steps:"
+  echo "  1) Open a new terminal (or log out/in) so PATH updates take effect"
+  echo "  2) Run: nmsmods set-path --auto   (or set-path <path>)"
+  echo "  3) Run: nmsmods nexus login --api-key <key>"
+  echo "  4) In Nexus, click 'Mod Manager Download' to auto-install"
 }
 
 main "$@"

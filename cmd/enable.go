@@ -53,7 +53,7 @@ var enableCmd = &cobra.Command{
 				return fmt.Errorf("stored mod folder not found: %s", storeAbs)
 			}
 
-			deployed, err := mods.Deploy(storeAbs, game.ModsDir, pi.Folder)
+			deployed, err := mods.Deploy(storeAbs, game.ModsDir, pi.Folder, id, profile)
 			if err != nil {
 				return err
 			}

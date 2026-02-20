@@ -13,9 +13,10 @@ import (
 
 // Defaults tuned for "real mods can be big" while still preventing obvious abuse.
 // You can override these with env vars:
-//   NMSMODS_MAX_FILE_BYTES   (default 8 GiB)
-//   NMSMODS_MAX_TOTAL_BYTES  (default 50 GiB)
-//   NMSMODS_MAX_FILES        (default 20000)
+//
+//	NMSMODS_MAX_FILE_BYTES   (default 8 GiB)
+//	NMSMODS_MAX_TOTAL_BYTES  (default 50 GiB)
+//	NMSMODS_MAX_FILES        (default 20000)
 const (
 	defaultMaxFileBytes  = int64(8) * 1024 * 1024 * 1024  // 8 GiB
 	defaultMaxTotalBytes = int64(50) * 1024 * 1024 * 1024 // 50 GiB
@@ -100,12 +101,12 @@ func sanitizeZipName(name string) (string, error) {
 		return "", fmt.Errorf("path traversal not allowed: %s", name)
 	}
 
-		for _, r := range rel {
+	for _, r := range rel {
 		if r < 32 {
 			return "", fmt.Errorf("invalid control character in path")
 		}
 	}
-	
+
 	if strings.Contains(rel, ":") {
 		return "", fmt.Errorf("invalid character ':' in path")
 	}

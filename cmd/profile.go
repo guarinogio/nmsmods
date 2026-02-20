@@ -136,7 +136,9 @@ func deployActiveProfile(p *app.Paths, cfg *app.Config, modsDir string) error {
 		changed := false
 		for prof, pi := range me.Installations {
 			if pi.Enabled && pi.Folder != "" {
-				_ = mods.Undeploy(modsDir, pi.Folder)
+				if err := mods.Undeploy(modsDir, pi.Folder, id, prof); err != nil {
+					return fmt.Errorf("failed to undeploy %s (%s): %w", id, prof, err)
+				}
 				pi.DeployedPath = ""
 				// Keep enabled state; we'll redeploy active ones below.
 				me.Installations[prof] = pi
@@ -158,7 +160,7 @@ func deployActiveProfile(p *app.Paths, cfg *app.Config, modsDir string) error {
 		if _, err := os.Stat(storeAbs); err != nil {
 			continue
 		}
-		deployed, err := mods.Deploy(storeAbs, modsDir, pi.Folder)
+		deployed, err := mods.Deploy(storeAbs, modsDir, pi.Folder, id, active)
 		if err != nil {
 			return err
 		}

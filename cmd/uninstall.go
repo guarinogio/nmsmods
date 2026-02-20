@@ -74,7 +74,9 @@ var uninstallCmd = &cobra.Command{
 				}
 
 				// Undeploy first (so game state is clean even if store removal fails).
-				_ = mods.Undeploy(game.ModsDir, pi.Folder)
+				if err := mods.Undeploy(game.ModsDir, pi.Folder, trackedID, profile); err != nil {
+					return err
+				}
 
 				if pi.Store != "" {
 					if _, err := os.Stat(storeAbs); err == nil {
@@ -106,7 +108,15 @@ var uninstallCmd = &cobra.Command{
 			}
 
 			// Otherwise treat as folder name directly (DANGEROUS - not tracked).
-			dest := filepath.Join(game.ModsDir, target)
+			// Still validate it's a single segment to avoid accidental traversal.
+			folder, err := mods.SanitizeFolderName(target, target)
+			if err != nil {
+				return err
+			}
+			dest, err := mods.SafeJoinUnder(game.ModsDir, folder)
+			if err != nil {
+				return err
+			}
 
 			if dryRunUninstall {
 				fmt.Println("[dry-run] Would uninstall by folder (untracked):")

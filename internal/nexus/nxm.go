@@ -10,7 +10,8 @@ import (
 // NXM represents a parsed nxm:// URL, as used by Nexus "Mod Manager Download".
 //
 // Example:
-//   nxm://nomanssky/mods/3718/files/43996?key=...&expires=...&user_id=...
+//
+//	nxm://nomanssky/mods/3718/files/43996?key=...&expires=...&user_id=...
 type NXM struct {
 	GameDomain string
 	ModID      int

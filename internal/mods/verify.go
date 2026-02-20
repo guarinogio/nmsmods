@@ -7,10 +7,10 @@ import (
 )
 
 type VerifyResult struct {
-	ZipExists      bool   `json:"zip_exists"`
-	InstalledExists bool  `json:"installed_exists"`
-	HasModFiles    bool   `json:"has_mod_files"`
-	Reason         string `json:"reason,omitempty"`
+	ZipExists       bool   `json:"zip_exists"`
+	InstalledExists bool   `json:"installed_exists"`
+	HasModFiles     bool   `json:"has_mod_files"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 // HasRelevantFiles returns true if the directory contains at least one .MBIN or .EXML (case-insensitive).
